@@ -46,9 +46,78 @@ function summarizeToolArgs(name: string, args: Record<string, unknown>): string 
   switch (name) {
     case "read_file":
     case "write_file":
-    case "edit_file": {
+    case "edit_file":
+    case "delete_file":
+    case "list_dir":
+    case "create_dir":
+    case "head_file":
+    case "tail_file":
+    case "count_lines": {
       const path = args["path"] ?? args["file_path"] ?? args["filename"];
       return typeof path === "string" ? truncate(path) : "";
+    }
+    case "move_file": {
+      const src = args["src"];
+      const dest = args["dest"];
+      if (typeof src === "string" && typeof dest === "string") {
+        return `${truncate(src, 28)} → ${truncate(dest, 28)}`;
+      }
+      return "";
+    }
+    case "grep":
+    case "search_files": {
+      const pattern = args["pattern"];
+      const where = args["path"] ?? args["dir"] ?? ".";
+      const glob = args["glob"];
+      const parts: string[] = [];
+      if (typeof pattern === "string") parts.push(`/${truncate(pattern, 32)}/`);
+      if (typeof where === "string") parts.push(`in ${truncate(where, 24)}`);
+      if (typeof glob === "string") parts.push(`(${glob})`);
+      return parts.join(" ");
+    }
+    case "sed": {
+      const path = args["path"];
+      const pattern = args["pattern"];
+      const dry = args["dry_run"] ? " [dry]" : "";
+      if (typeof path === "string" && typeof pattern === "string") {
+        return `${truncate(path, 28)} s/${truncate(pattern, 24)}/…${dry}`;
+      }
+      return typeof path === "string" ? truncate(path) : "";
+    }
+    case "diff_files": {
+      const a = args["a"];
+      const b = args["b"];
+      if (typeof a === "string" && typeof b === "string") {
+        return `${truncate(a, 24)} ↔ ${truncate(b, 24)}`;
+      }
+      return "";
+    }
+    case "find_files": {
+      const pattern = args["pattern"];
+      const dir = args["dir"] ?? ".";
+      if (typeof pattern === "string" && typeof dir === "string") {
+        return `${pattern} in ${truncate(dir, 24)}`;
+      }
+      return typeof pattern === "string" ? pattern : "";
+    }
+    case "npm": {
+      const sub = args["subcommand"];
+      const extra = Array.isArray(args["args"]) ? (args["args"] as unknown[]).map(String).join(" ") : "";
+      return typeof sub === "string" ? truncate(`${sub} ${extra}`.trim()) : "";
+    }
+    case "git": {
+      const sub = args["subcommand"];
+      const extra = Array.isArray(args["args"]) ? (args["args"] as unknown[]).map(String).join(" ") : "";
+      return typeof sub === "string" ? truncate(`${sub} ${extra}`.trim()) : "";
+    }
+    case "run_script": {
+      const path = args["path"];
+      const extra = Array.isArray(args["args"]) ? (args["args"] as unknown[]).map(String).join(" ") : "";
+      return typeof path === "string" ? truncate(`${path} ${extra}`.trim()) : "";
+    }
+    case "fetch_url": {
+      const url = args["url"];
+      return typeof url === "string" ? truncate(url, 80) : "";
     }
     case "shell":
     case "run_shell":

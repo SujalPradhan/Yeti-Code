@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e": "vitest run",
     "benchmark": "ts-node tests/benchmark.ts",
     "start": "node dist/presentation/cli/index.js",

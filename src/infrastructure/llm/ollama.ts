@@ -30,9 +30,9 @@ interface PendingToolCall {
  * Both modes return only "visible" text (no raw tags) and are streaming-
  * safe across chunk boundaries.
  */
-type ThinkMode = "strip" | "show";
+export type ThinkMode = "strip" | "show";
 
-class ThinkStripper {
+export class ThinkStripper {
   private state: "out" | "in" = "out";
   private buf = "";
   private static readonly OPEN = "<think>";
