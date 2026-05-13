@@ -4,7 +4,8 @@ YetiMind is a streaming terminal AI assistant powered by the **Google Gemini SDK
 
 ## ✨ Features
 
-- **Native Gemini SDK**: Uses `@google/genai` for streaming and tool calling — no OpenAI shim.
+- **Multi-Agent Teams**: Built-in Leader-Worker architecture to decompose complex requests and execute parallel sub-tasks using the `delegate_tasks` tool.
+- **Local & Remote Models**: Supports the native Google Gemini SDK and offline local models via Ollama.
 - **Real-time Streaming**: Response tokens are printed character-by-character as they arrive.
 - **Tool System**: Comprehensive suite of built-in file system tools with confirmation prompts.
 - **Agent Loop**: Automatically handles multiple tool-call turns (up to a configurable limit).
@@ -18,6 +19,7 @@ YetiMind is a streaming terminal AI assistant powered by the **Google Gemini SDK
 
 - [Node.js](https://nodejs.org/) (v18 or higher recommended)
 - A [Google Gemini API Key](https://aistudio.google.com/apikey)
+- (Optional) [Ollama](https://ollama.com/) for running local LLMs
 
 ### Installation
 
@@ -80,6 +82,7 @@ Options:
 | `move_file(src, dest)` | Moves or renames a file. Asks confirmation. |
 | `search_files(dir, pattern)` | Recursively searches for a regex pattern within files in a directory. |
 | `shell(command, cwd?)` | Runs a shell command. Live streams stdout, captures stderr, 30s timeout. |
+| `delegate_tasks(reasoning, tasks)` | Decomposes a request into parallel sub-tasks and assigns them to different sub-agents. *Requires Team Mode.* |
 
 ## 🎭 Skills System
 
@@ -92,6 +95,8 @@ node dist/cli.js --skill coder
 # In-session commands
 /skill list              # List available skills
 /skill use researcher    # Switch to researcher mode
+/model                   # Open interactive model picker
+/team on                 # Enable multi-agent Leader-Worker team mode
 /usage                   # Display current context and token usage stats
 ```
 
@@ -111,9 +116,9 @@ Custom skills can be added as JSON files to `~/.yetimind/skills/`.
 ```text
 src/
 ├── core/               # App configuration and session logging
-├── domain/             # LLM Agent loop, token context, shared types
-├── features/           # Modular skills and tool registries (fs, shell)
-├── infrastructure/     # LLM Provider interfaces (Google Gemini SDK)
+├── domain/             # LLM Agent loop, token context, team orchestrator
+├── features/           # Modular skills and tool registries (fs, shell, teams)
+├── infrastructure/     # LLM Providers (Google Gemini SDK, Ollama API)
 └── presentation/       # CLI entry point, REPL loop, terminal UI formatting
 ```
 

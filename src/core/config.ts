@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { Command } from "commander";
+import { stateManager } from "./state";
 
 dotenv.config();
 
@@ -48,7 +49,7 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
   }>();
 
   const apiKey = process.env["GEMINI_API_KEY"] ?? process.env["OPENAI_API_KEY"] ?? "";
-  const model = opts.model ?? process.env["MODEL"] ?? "gemini-2.5-flash";
+  const model = opts.model ?? stateManager.getLastModel() ?? process.env["MODEL"] ?? "qwen3:4b";
   const maxContextTokens = opts.maxTokens
     ? parseInt(opts.maxTokens, 10)
     : parseInt(process.env["MAX_CONTEXT_TOKENS"] ?? "8000", 10);

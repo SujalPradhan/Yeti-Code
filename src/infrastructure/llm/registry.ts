@@ -86,4 +86,9 @@ export class ModelRegistry {
   getActiveId(): string {
     return this.activeId;
   }
+
+  /** Get the provider instance by provider type name. */
+  getProviderFor(providerType: string): import("./types").LLMProvider | undefined {
+    return this.providers.get(providerType);
+  }
 }

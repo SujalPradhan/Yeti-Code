@@ -6,6 +6,7 @@ import type { ToolRegistry } from "../features/tools/registry";
 import type { SkillRegistry } from "../features/skills/registry";
 import type { LLMProvider, FunctionDeclaration } from "../infrastructure/llm/types";
 import type { Content } from "./types";
+import type { ToolContext } from "../features/tools/types";
 
 export interface AgentContext {
   config: AppConfig;
@@ -16,6 +17,8 @@ export interface AgentContext {
   logger: SessionLogger;
   provider: LLMProvider;
   supportsTools: boolean;
+  /** Extra fields merged into ToolContext for each tool dispatch (e.g. teamOrchestrator) */
+  toolContextExtras?: Partial<ToolContext>;
   callbacks: {
     onTurnStart: () => void;
     onToken: (token: string) => void;
@@ -95,6 +98,7 @@ export async function agentLoop(agentCtx: AgentContext): Promise<void> {
       const toolContext = {
         logger: agentCtx.logger,
         confirm: callbacks.onAskConfirm,
+        ...agentCtx.toolContextExtras,
       };
 
       const toolResult = await toolRegistry.dispatch(toolName, toolArgs, toolContext);

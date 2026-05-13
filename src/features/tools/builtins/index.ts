@@ -10,6 +10,7 @@ import {
   searchFilesTool,
 } from "./fs";
 import { shellTool } from "./shell";
+import { delegateTasksTool } from "./delegateTasks";
 
 /** Register all built-in tools into a registry. */
 export function registerBuiltins(
@@ -24,4 +25,5 @@ export function registerBuiltins(
   registry.register(moveFileTool);
   registry.register(searchFilesTool);
   registry.register(shellTool);
+  registry.register(delegateTasksTool);
 }

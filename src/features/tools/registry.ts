@@ -39,10 +39,27 @@ export class ToolRegistry {
 
   /** Format tools for the Gemini API `functionDeclarations` parameter. */
   toFunctionDeclarations(): FunctionDeclaration[] {
+    const uppercaseTypes = (obj: any): any => {
+      if (Array.isArray(obj)) {
+        return obj.map(uppercaseTypes);
+      } else if (obj !== null && typeof obj === "object") {
+        const copy: any = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (k === "type" && typeof v === "string") {
+            copy[k] = v.toUpperCase();
+          } else {
+            copy[k] = uppercaseTypes(v);
+          }
+        }
+        return copy;
+      }
+      return obj;
+    };
+
     return this.getAll().map((t) => ({
       name: t.name,
       description: t.description,
-      parameters: t.schema as Record<string, unknown>,
+      parameters: uppercaseTypes(t.schema) as Record<string, unknown>,
     }));
   }
 
