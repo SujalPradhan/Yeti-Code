@@ -10,6 +10,7 @@ export interface AppConfig {
   maxTurns: number;
   skill?: string;
   verbose: boolean;
+  ollamaUrl: string;
 }
 
 /**
@@ -34,6 +35,7 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
       "max tool-call turns per user message (default: 10)",
     )
     .option("-s, --skill <name>", "activate a specific skill at startup")
+    .option("--ollama-url <url>", "Ollama server URL")
     .parse(argv);
 
   const opts = program.opts<{
@@ -42,10 +44,11 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
     maxTokens?: string;
     maxTurns?: string;
     skill?: string;
+    ollamaUrl?: string;
   }>();
 
   const apiKey = process.env["GEMINI_API_KEY"] ?? process.env["OPENAI_API_KEY"] ?? "";
-  const model = opts.model ?? process.env["MODEL"] ?? "gemini-2.0-flash";
+  const model = opts.model ?? process.env["MODEL"] ?? "gemini-2.5-flash";
   const maxContextTokens = opts.maxTokens
     ? parseInt(opts.maxTokens, 10)
     : parseInt(process.env["MAX_CONTEXT_TOKENS"] ?? "8000", 10);
@@ -54,13 +57,10 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
     : 10;
   const skill = opts.skill;
   const verbose = opts.verbose ?? false;
+  const ollamaUrl = opts.ollamaUrl ?? process.env["OLLAMA_URL"] ?? "http://localhost:11434";
 
-  if (!apiKey) {
-    console.error(
-      "❌  GEMINI_API_KEY is not set. Add it to .env or export it.",
-    );
-    process.exit(1);
-  }
+  // API key is no longer required — Ollama models don't need one.
+  // We'll validate at provider level instead.
 
-  return { apiKey, model, maxContextTokens, maxTurns, skill, verbose };
+  return { apiKey, model, maxContextTokens, maxTurns, skill, verbose, ollamaUrl };
 }

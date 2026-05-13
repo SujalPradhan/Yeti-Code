@@ -1,7 +1,8 @@
 import chalk from "chalk";
+import type { Interface as RlInterface } from "readline";
 import type { UsageStats } from "../../domain/types";
 import type { ConversationContext } from "../../domain/context";
-import type { FunctionCall } from "../../domain/types";
+import type { ModelConfig } from "../../infrastructure/llm/registry";
 
 export const BANNER = `
 ${chalk.bold.cyan("╔══════════════════════════════════════╗")}
@@ -54,4 +55,72 @@ export function printToolResult(name: string, result: string, verbose: boolean):
     const truncated = result.length > 500 ? result.slice(0, 500) + "…" : result;
     console.log(chalk.dim(`  📎 result [${name}]: ${truncated}`));
   }
+}
+
+export function printModelList(models: ModelConfig[], activeId: string): void {
+  console.log(chalk.bold("\n  Available Models:"));
+  for (const m of models) {
+    const isActive = m.id === activeId;
+    const status = m.available
+      ? chalk.green("●")
+      : chalk.red("○");
+    const provider = chalk.dim(`[${m.providerType}]`);
+    const toolBadge = m.supportsTools ? "" : chalk.dim(" · no tools");
+    console.log(
+      `  ${isActive ? chalk.green("→") : " "} ${status} ${chalk.cyan(m.id.padEnd(24))} ${provider}${toolBadge} ${chalk.dim(m.label)}`,
+    );
+  }
+  console.log("");
+}
+
+/**
+ * Numbered model picker — uses rl.question() so it never conflicts with
+ * readline's own stdin management (no raw mode, no app shutdown).
+ *
+ * Prints a numbered list, asks the user to type a number, and returns the
+ * selected ModelConfig. Returns undefined if the user cancels (empty input
+ * or a non-numeric answer).
+ */
+export async function interactiveModelPicker(
+  models: ModelConfig[],
+  activeId: string,
+  rl: RlInterface,
+): Promise<ModelConfig | undefined> {
+  if (models.length === 0) return undefined;
+
+  // Print numbered list
+  console.log(chalk.bold("\n  Select a model:"));
+  console.log(chalk.dim("  (type a number and press Enter, or leave blank to cancel)\n"));
+
+  for (let i = 0; i < models.length; i++) {
+    const m = models[i];
+    const isCurrent = m.id === activeId;
+    const num = chalk.dim(`  ${String(i + 1).padStart(2)}.`);
+    const id = isCurrent
+      ? chalk.bold.cyan(m.id.padEnd(28))
+      : chalk.cyan(m.id.padEnd(28));
+    const provider = chalk.dim(`[${m.providerType}]`);
+    const toolBadge = m.supportsTools ? "" : chalk.dim(" · no tools");
+    const currentTag = isCurrent ? chalk.dim(" ← current") : "";
+    console.log(`${num} ${id} ${provider}${toolBadge}${currentTag}`);
+  }
+
+  console.log("");
+
+  return new Promise((resolve) => {
+    rl.question(chalk.green("  Choice: "), (answer) => {
+      const trimmed = answer.trim();
+      if (!trimmed) {
+        resolve(undefined);
+        return;
+      }
+      const idx = parseInt(trimmed, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= models.length) {
+        console.log(chalk.red(`  ❌ Invalid choice "${trimmed}"\n`));
+        resolve(undefined);
+        return;
+      }
+      resolve(models[idx]);
+    });
+  });
 }

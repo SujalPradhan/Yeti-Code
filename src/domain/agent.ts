@@ -15,6 +15,7 @@ export interface AgentContext {
   rl: readline.Interface;
   logger: SessionLogger;
   provider: LLMProvider;
+  supportsTools: boolean;
   callbacks: {
     onTurnStart: () => void;
     onToken: (token: string) => void;
@@ -45,7 +46,7 @@ export async function agentLoop(agentCtx: AgentContext): Promise<void> {
       activeSkill.tools?.includes(t.name),
     );
   }
-  const toolsParam = availableToolDefs.length > 0 ? availableToolDefs : undefined;
+  const toolsParam = agentCtx.supportsTools && availableToolDefs.length > 0 ? availableToolDefs : undefined;
 
   // Model override from skill
   const model = activeSkill.model || config.model;
