@@ -1,12 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { Tool, ToolContext } from "../types";
-
-function checkSafety(p: string): boolean {
-  if (path.isAbsolute(p)) return true;
-  const resolved = path.resolve(process.cwd(), p);
-  return resolved.startsWith(process.cwd());
-}
+import { resolveWorkspacePath } from "../pathSafety";
 
 export const readFileTool: Tool = {
   name: "read_file",
@@ -25,8 +20,10 @@ export const readFileTool: Tool = {
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const p = args["path"] as string;
     if (!p) return 'Error: "path" parameter is required.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
     try {
-      const content = await fs.readFile(p, "utf-8");
+      const content = await fs.readFile(safePath.path, "utf-8");
       return content;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -51,7 +48,8 @@ export const writeFileTool: Tool = {
     const p = args["path"] as string;
     const content = args["content"] as string;
     if (!p || typeof content !== "string") return 'Error: "path" and "content" are required.';
-    if (!checkSafety(p)) return 'Error: Access denied. Path resolves outside cwd.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
 
     const confirm = await ctx.confirm(`Write ${content.length} bytes to ${p}?`);
     if (!confirm) {
@@ -60,7 +58,7 @@ export const writeFileTool: Tool = {
     }
 
     try {
-      await fs.writeFile(p, content, "utf-8");
+      await fs.writeFile(safePath.path, content, "utf-8");
       await ctx.logger.log(`write_file: Wrote to ${p}`);
       return `Successfully wrote to "${p}".`;
     } catch (err: unknown) {
@@ -88,7 +86,8 @@ export const editFileTool: Tool = {
     const oldStr = args["old_str"] as string;
     const content = args["content"] as string;
     if (!p || !oldStr || typeof content !== "string") return "Error: Missing parameters.";
-    if (!checkSafety(p)) return 'Error: Access denied.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
 
     const confirm = await ctx.confirm(`Replace string in ${p}?`);
     if (!confirm) {
@@ -97,12 +96,12 @@ export const editFileTool: Tool = {
     }
 
     try {
-      const fileContent = await fs.readFile(p, "utf-8");
+      const fileContent = await fs.readFile(safePath.path, "utf-8");
       if (!fileContent.includes(oldStr)) {
         return `Error: The string "${oldStr}" was not found in the file.`;
       }
       const newContent = fileContent.replace(oldStr, content);
-      await fs.writeFile(p, newContent, "utf-8");
+      await fs.writeFile(safePath.path, newContent, "utf-8");
       await ctx.logger.log(`edit_file: Edited ${p}`);
       return `Successfully edited "${p}".`;
     } catch (err: unknown) {
@@ -126,7 +125,8 @@ export const deleteFileTool: Tool = {
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const p = args["path"] as string;
     if (!p) return 'Error: "path" parameter is required.';
-    if (!checkSafety(p)) return 'Error: Access denied.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
 
     const confirm = await ctx.confirm(`Delete file ${p}?`);
     if (!confirm) {
@@ -135,7 +135,7 @@ export const deleteFileTool: Tool = {
     }
 
     try {
-      await fs.unlink(p);
+      await fs.unlink(safePath.path);
       await ctx.logger.log(`delete_file: Deleted ${p}`);
       return `Successfully deleted "${p}".`;
     } catch (err: unknown) {
@@ -159,8 +159,10 @@ export const listDirTool: Tool = {
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const p = args["path"] as string;
     if (!p) return 'Error: "path" parameter is required.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
     try {
-      const files = await fs.readdir(p);
+      const files = await fs.readdir(safePath.path);
       return files.join("\n");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -183,10 +185,11 @@ export const createDirTool: Tool = {
   async execute(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const p = args["path"] as string;
     if (!p) return 'Error: "path" parameter is required.';
-    if (!checkSafety(p)) return 'Error: Access denied.';
+    const safePath = resolveWorkspacePath(p);
+    if (!safePath.ok) return `Error: ${safePath.error}`;
 
     try {
-      await fs.mkdir(p, { recursive: true });
+      await fs.mkdir(safePath.path, { recursive: true });
       await ctx.logger.log(`create_dir: Created ${p}`);
       return `Successfully created directory "${p}".`;
     } catch (err: unknown) {
@@ -212,7 +215,10 @@ export const moveFileTool: Tool = {
     const src = args["src"] as string;
     const dest = args["dest"] as string;
     if (!src || !dest) return "Error: Missing parameters.";
-    if (!checkSafety(src) || !checkSafety(dest)) return 'Error: Access denied.';
+    const safeSrc = resolveWorkspacePath(src);
+    if (!safeSrc.ok) return `Error: ${safeSrc.error}`;
+    const safeDest = resolveWorkspacePath(dest);
+    if (!safeDest.ok) return `Error: ${safeDest.error}`;
 
     const confirm = await ctx.confirm(`Move/Rename ${src} to ${dest}?`);
     if (!confirm) {
@@ -221,7 +227,7 @@ export const moveFileTool: Tool = {
     }
 
     try {
-      await fs.rename(src, dest);
+      await fs.rename(safeSrc.path, safeDest.path);
       await ctx.logger.log(`move_file: Moved ${src} to ${dest}`);
       return `Successfully moved "${src}" to "${dest}".`;
     } catch (err: unknown) {
@@ -247,6 +253,8 @@ export const searchFilesTool: Tool = {
     const dir = args["dir"] as string;
     const pattern = args["pattern"] as string;
     if (!dir || !pattern) return "Error: Missing parameters.";
+    const safeDir = resolveWorkspacePath(dir);
+    if (!safeDir.ok) return `Error: ${safeDir.error}`;
 
     let regex: RegExp;
     try {
@@ -281,7 +289,7 @@ export const searchFilesTool: Tool = {
       } catch (e) { /* ignore */ }
     }
 
-    await walk(dir);
+    await walk(safeDir.path);
     if (results.length === 0) return "No matches found.";
     if (results.length > 200) {
       return results.slice(0, 200).join("\n") + "\n\n... (truncated, too many matches)";

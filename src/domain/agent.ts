@@ -17,6 +17,8 @@ export interface AgentContext {
   logger: SessionLogger;
   provider: LLMProvider;
   supportsTools: boolean;
+  /** Tool names that should remain available even if the active skill filters tools. */
+  forcedToolNames?: string[];
   /** Extra fields merged into ToolContext for each tool dispatch (e.g. teamOrchestrator) */
   toolContextExtras?: Partial<ToolContext>;
   callbacks: {
@@ -44,9 +46,10 @@ export async function agentLoop(agentCtx: AgentContext): Promise<void> {
 
   // Filter tools based on skill
   let availableToolDefs: FunctionDeclaration[] = toolRegistry.toFunctionDeclarations();
+  const forcedToolNames = new Set(agentCtx.forcedToolNames ?? []);
   if (activeSkill.tools) {
     availableToolDefs = availableToolDefs.filter((t) =>
-      activeSkill.tools?.includes(t.name),
+      activeSkill.tools?.includes(t.name) || forcedToolNames.has(t.name),
     );
   }
   const toolsParam = agentCtx.supportsTools && availableToolDefs.length > 0 ? availableToolDefs : undefined;

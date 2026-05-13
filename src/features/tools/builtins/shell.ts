@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import chalk from "chalk";
 import type { Tool, ToolContext } from "../types";
+import { resolveWorkspacePath } from "../pathSafety";
 
 const SHELL_TIMEOUT_MS = 30_000;
 
@@ -21,7 +22,16 @@ export const shellTool: Tool = {
     const cwdArg = args["cwd"] as string | undefined;
     if (!command) return 'Error: "command" parameter is required.';
 
-    await ctx.logger.log(`shell: ${command}`);
+    const safeCwd = cwdArg ? resolveWorkspacePath(cwdArg) : resolveWorkspacePath(".");
+    if (!safeCwd.ok) return `Error: ${safeCwd.error}`;
+
+    const confirm = await ctx.confirm(`Run shell command in ${safeCwd.path}: ${command}?`);
+    if (!confirm) {
+      await ctx.logger.log(`shell cancelled by user: ${command}`);
+      return "Action cancelled by user.";
+    }
+
+    await ctx.logger.log(`shell: ${command} (cwd=${safeCwd.path})`);
 
     return new Promise<string>((resolve) => {
       // Print separator so streaming output is distinct
@@ -29,7 +39,7 @@ export const shellTool: Tool = {
       
       const child = spawn(command, { 
         shell: true, 
-        cwd: cwdArg || process.cwd() 
+        cwd: safeCwd.path,
       });
       
       let stdoutData = "";

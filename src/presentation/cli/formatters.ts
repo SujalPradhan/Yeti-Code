@@ -6,7 +6,7 @@ import type { ModelConfig } from "../../infrastructure/llm/registry";
 
 export const BANNER = `
 ${chalk.bold.cyan("╔══════════════════════════════════════╗")}
-${chalk.bold.cyan("║")}  ${chalk.bold.white("🧊  YetiMind")}  ${chalk.dim("v0.3.0")}                ${chalk.bold.cyan("║")}
+${chalk.bold.cyan("║")}  ${chalk.bold.white("🧊  YetiMind")}  ${chalk.dim("v0.1.0")}                ${chalk.bold.cyan("║")}
 ${chalk.bold.cyan("║")}  ${chalk.dim("Streaming terminal AI assistant")}     ${chalk.bold.cyan("║")}
 ${chalk.bold.cyan("╚══════════════════════════════════════╝")}
 `;
@@ -39,15 +39,60 @@ export function printUsage(stats: UsageStats | null, ctx: ConversationContext): 
   console.log(chalk.dim("  └────────────────────────────────────────\n"));
 }
 
+function summarizeToolArgs(name: string, args: Record<string, unknown>): string {
+  const truncate = (s: string, n = 60): string =>
+    s.length > n ? s.slice(0, n - 1) + "…" : s;
+
+  switch (name) {
+    case "read_file":
+    case "write_file":
+    case "edit_file": {
+      const path = args["path"] ?? args["file_path"] ?? args["filename"];
+      return typeof path === "string" ? truncate(path) : "";
+    }
+    case "shell":
+    case "run_shell":
+    case "bash": {
+      const cmd = args["command"] ?? args["cmd"] ?? args["script"];
+      return typeof cmd === "string" ? `"${truncate(cmd)}"` : "";
+    }
+    case "delegate_tasks": {
+      const tasks = args["tasks"];
+      const parsed = typeof tasks === "string"
+        ? (() => { try { return JSON.parse(tasks); } catch { return null; } })()
+        : tasks;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const models = parsed
+          .map((t) => (t && typeof t === "object" ? (t as Record<string, unknown>)["modelId"] : undefined))
+          .filter((m): m is string => typeof m === "string");
+        const unique = Array.from(new Set(models));
+        return `${parsed.length} task${parsed.length === 1 ? "" : "s"} → [${unique.join(", ")}]`;
+      }
+      return "";
+    }
+    default: {
+      // Fall back to the first short string-valued arg, if any.
+      for (const [, v] of Object.entries(args)) {
+        if (typeof v === "string" && v.length > 0 && v.length < 120) {
+          return truncate(v);
+        }
+      }
+      return "";
+    }
+  }
+}
+
 export function printToolCall(name: string, args: Record<string, unknown>, verbose: boolean): void {
   if (verbose) {
     const argsStr = JSON.stringify(args, null, 2);
     console.log(
       chalk.yellow(`\n  🔧 tool: ${chalk.bold(name)}(${argsStr})`),
     );
-  } else {
-    console.log(chalk.yellow(`\n  🔧 ${name}`));
+    return;
   }
+  const summary = summarizeToolArgs(name, args);
+  const head = chalk.yellow(`\n  🔧 ${chalk.bold(name.padEnd(16))}`);
+  console.log(summary ? `${head} ${chalk.dim(summary)}` : head);
 }
 
 export function printToolResult(name: string, result: string, verbose: boolean): void {

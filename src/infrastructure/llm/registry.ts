@@ -43,7 +43,11 @@ export class ModelRegistry {
 
   /** Get the currently active model config. */
   getActive(): ModelConfig {
-    return this.models.get(this.activeId)!;
+    const model = this.models.get(this.activeId);
+    if (!model) {
+      throw new Error("No active model is set.");
+    }
+    return model;
   }
 
   /** Get the LLMProvider for the currently active model. */

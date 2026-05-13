@@ -35,12 +35,24 @@ export const delegateTasksTool: Tool = {
           "Explain why you chose this decomposition and which model handles which part.",
       },
       tasks: {
-        type: "string",
+        type: "array",
         description:
-          "A JSON array of task objects to run in parallel. Each object must have: { 'id': string, 'description': string, 'prompt': string, 'modelId': string }. Example: [{\"id\": \"t1\", \"description\": \"...\", \"prompt\": \"...\", \"modelId\": \"qwen3:4b\"}]",
+          "Task objects to run in parallel. Each task must have id, description, prompt, and modelId.",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            description: { type: "string" },
+            prompt: { type: "string" },
+            modelId: { type: "string" },
+          },
+          required: ["id", "description", "prompt", "modelId"],
+          additionalProperties: false,
+        },
       },
     },
     required: ["reasoning", "tasks"],
+    additionalProperties: false,
   },
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
@@ -51,17 +63,34 @@ export const delegateTasksTool: Tool = {
     }
 
     const reasoning = (args["reasoning"] as string) ?? "";
-    const tasksRaw = args["tasks"] as string;
+    const tasksValue = args["tasks"];
     
     let rawTasks: AgentTask[] = [];
-    try {
-      rawTasks = JSON.parse(tasksRaw);
-    } catch (err) {
-      return `Error: Failed to parse tasks JSON array. ${err}`;
+    if (typeof tasksValue === "string") {
+      try {
+        rawTasks = JSON.parse(tasksValue);
+      } catch (err) {
+        return `Error: Failed to parse tasks JSON array. ${err}`;
+      }
+    } else if (Array.isArray(tasksValue)) {
+      rawTasks = tasksValue as AgentTask[];
+    } else {
+      return "Error: tasks must be an array of task objects.";
     }
 
     if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
       return "Error: tasks must be a non-empty JSON array.";
+    }
+
+    for (const task of rawTasks) {
+      if (
+        typeof task.id !== "string" ||
+        typeof task.description !== "string" ||
+        typeof task.prompt !== "string" ||
+        typeof task.modelId !== "string"
+      ) {
+        return "Error: each task must include string id, description, prompt, and modelId fields.";
+      }
     }
 
     const plan: TeamPlan = { reasoning, tasks: rawTasks };
@@ -74,34 +103,83 @@ export const delegateTasksTool: Tool = {
     console.log(chalk.dim(`  ║  ${reasoning.slice(0, 70)}${reasoning.length > 70 ? "…" : ""}`));
     console.log(chalk.bold.cyan("  ╚════════════════════════════════════════════╝\n"));
 
-    for (const task of rawTasks) {
-      console.log(
-        `  ${chalk.cyan("◆")} ${chalk.bold(task.id)} → ${chalk.dim(task.description)} ${chalk.yellow(`[${task.modelId}]`)}`,
-      );
+    // ── Live status block ──────────────────────────────────────────────────
+    // Pre-print one line per task; redraw the whole block in place as tokens
+    // stream in. This lets students watch each sub-agent work in real time.
+    type Status = "pending" | "running" | "done" | "failed";
+    interface TaskState {
+      status: Status;
+      tokens: number;
+      modelId: string;
+      description: string;
+      durationMs?: number;
+      error?: string;
     }
-    console.log("");
+    const taskState = new Map<string, TaskState>();
+    for (const t of rawTasks) {
+      taskState.set(t.id, {
+        status: "pending",
+        tokens: 0,
+        modelId: t.modelId,
+        description: t.description,
+      });
+    }
+    const taskOrder = rawTasks.map((t) => t.id);
+
+    const renderLine = (id: string): string => {
+      const s = taskState.get(id)!;
+      const idLabel = chalk.bold(id.padEnd(12));
+      const modelLabel = chalk.yellow(`[${s.modelId}]`);
+      const desc = chalk.dim(s.description.length > 32 ? s.description.slice(0, 31) + "…" : s.description);
+      if (s.status === "pending") {
+        return `  ${chalk.dim("•")} ${idLabel} ${modelLabel} ${desc}`;
+      }
+      if (s.status === "running") {
+        return `  ${chalk.cyan("⏳")} ${idLabel} ${modelLabel} ${desc} ${chalk.dim(`· ${s.tokens} tokens…`)}`;
+      }
+      if (s.status === "done") {
+        return `  ${chalk.green("✓")} ${idLabel} ${modelLabel} ${desc} ${chalk.dim(`· ${s.tokens} tokens · ${s.durationMs}ms`)}`;
+      }
+      return `  ${chalk.red("✗")} ${idLabel} ${modelLabel} ${desc} ${chalk.red(`· ${s.error ?? "failed"}`)}`;
+    };
+
+    // Initial render
+    for (const id of taskOrder) {
+      console.log(renderLine(id));
+    }
+
+    let lastRender = Date.now();
+    const rerender = (force = false): void => {
+      const now = Date.now();
+      if (!force && now - lastRender < 80) return;
+      lastRender = now;
+      // Move cursor up N lines to the top of the block.
+      process.stdout.write(`\x1b[${taskOrder.length}A`);
+      for (const id of taskOrder) {
+        process.stdout.write(`\r\x1b[2K${renderLine(id)}\n`);
+      }
+    };
 
     // Run all sub-agents in parallel
     const results = await orchestrator.runParallel(rawTasks, {
       onTaskStart: (task) => {
-        process.stdout.write(
-          chalk.dim(`  ⏳ ${task.id} (${task.modelId}) starting...\n`),
-        );
+        const s = taskState.get(task.id);
+        if (s) s.status = "running";
+        rerender(true);
       },
-      onTaskToken: (_taskId, _token) => {
-        // Silent streaming for sub-agents — we show results when done
+      onTaskToken: (taskId, _token) => {
+        const s = taskState.get(taskId);
+        if (s) s.tokens++;
+        rerender();
       },
       onTaskComplete: (result) => {
-        if (result.error) {
-          console.log(
-            chalk.red(`  ✗ ${result.taskId} failed: ${result.error}`),
-          );
-        } else {
-          console.log(
-            chalk.green(`  ✓ ${result.taskId} done`) +
-              chalk.dim(` (${result.durationMs}ms)`),
-          );
+        const s = taskState.get(result.taskId);
+        if (s) {
+          s.status = result.error ? "failed" : "done";
+          s.durationMs = result.durationMs;
+          s.error = result.error;
         }
+        rerender(true);
       },
     });
 

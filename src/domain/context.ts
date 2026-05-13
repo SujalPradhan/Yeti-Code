@@ -58,6 +58,16 @@ export class ConversationContext {
     return [...this.messages];
   }
 
+  replaceLastMessage(message: Content): void {
+    if (this.messages.length === 0) {
+      this.addMessage(message);
+      return;
+    }
+
+    this.messages[this.messages.length - 1] = message;
+    this.trim();
+  }
+
   /** Get the system instruction string (used in config, not as a Content message). */
   getSystemInstruction(): string {
     return this.systemInstruction;
@@ -86,6 +96,11 @@ export class ConversationContext {
     return this.messages.length;
   }
 
+  /** Configured maximum token budget for the context window. */
+  getMaxTokens(): number {
+    return this.maxTokens;
+  }
+
   /**
    * Drop the oldest messages until we're under the token limit.
    */
@@ -95,6 +110,22 @@ export class ConversationContext {
       estimateTotalTokens(this.messages) > this.maxTokens
     ) {
       this.messages.splice(0, 1);
+
+      while (
+        this.messages.length > 0 &&
+        (this.hasFunctionCall(this.messages[0]) ||
+          this.hasFunctionResponse(this.messages[0]))
+      ) {
+        this.messages.splice(0, 1);
+      }
     }
+  }
+
+  private hasFunctionCall(message: Content): boolean {
+    return message.parts?.some((part) => Boolean(part.functionCall)) ?? false;
+  }
+
+  private hasFunctionResponse(message: Content): boolean {
+    return message.parts?.some((part) => Boolean(part.functionResponse)) ?? false;
   }
 }

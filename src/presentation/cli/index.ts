@@ -33,6 +33,23 @@ let teamModeActive = false;
 let planExecuteMode = false;
 let plannerModelId: string | undefined;
 let executorModelId: string | undefined;
+// Highest context-usage threshold (0-100) we've already warned about this session.
+let lastContextWarnPct = 0;
+
+function maybePrintContextHint(ctx: ConversationContext): void {
+  const max = ctx.getMaxTokens();
+  if (max <= 0) return;
+  const pct = Math.floor((ctx.getTokenCount() / max) * 100);
+  const thresholds = [70, 85, 95];
+  for (const t of thresholds) {
+    if (pct >= t && lastContextWarnPct < t) {
+      lastContextWarnPct = t;
+      const color = t >= 95 ? chalk.red : t >= 85 ? chalk.yellow : chalk.dim;
+      console.log(color(`  ⚠ context ${pct}% full — /usage for details`));
+      break;
+    }
+  }
+}
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -69,18 +86,6 @@ async function main(): Promise<void> {
   const ollamaProvider = new OllamaProvider(config.ollamaUrl);
   modelRegistry.registerProvider("ollama", ollamaProvider);
 
-  // Set active model from config immediately using what's registered so far
-  if (!modelRegistry.setActive(config.model)) {
-    const allModels = modelRegistry.list();
-    if (allModels.length === 0) {
-      console.error(chalk.red(
-        "\n  ❌  No models available. Set GEMINI_API_KEY in .env or start Ollama (`ollama serve`).\n",
-      ));
-      process.exit(1);
-    }
-    modelRegistry.setActive(allModels[0].id);
-  }
-
   // ── Skills & Tools ────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry();
   await skillRegistry.loadFromDirectory("~/.yetimind/skills");
@@ -99,6 +104,10 @@ async function main(): Promise<void> {
 
   const ctx = new ConversationContext(config.maxContextTokens);
   ctx.updateSystemMessage(skillRegistry.getActive().systemPrompt);
+
+  // Thinking mode always starts OFF — opt in per-session with /think on.
+  ollamaProvider.setThinking(false);
+  stateManager.setThinkingMode(false);
 
   // ── Discover local Ollama models ─────────────────────────────────────────
   const ollamaSpinner = new Spinner("Discovering local Ollama models");
@@ -133,9 +142,27 @@ async function main(): Promise<void> {
     ollamaSpinner.stop();
   }
 
-  // Try to activate the default model from config (which defaults to stateManager or qwen3)
-  if (!modelRegistry.getActive() || modelRegistry.getActive().id !== config.model) {
-    modelRegistry.setActive(config.model);
+  // Try to activate the configured model after all providers have been discovered.
+  if (!modelRegistry.setActive(config.model)) {
+    const allModels = modelRegistry.list().filter((m) => m.available);
+    if (allModels.length === 0) {
+      console.error(chalk.red(
+        "\n  ❌  No models available. Set GEMINI_API_KEY in .env or start Ollama (`ollama serve`).\n",
+      ));
+      process.exit(1);
+    }
+    modelRegistry.setActive(allModels[0].id);
+  }
+
+  // ── Restore Advanced Modes ────────────────────────────────────────────────
+  teamModeActive = stateManager.getTeamModeActive() ?? false;
+  planExecuteMode = stateManager.getPlanExecuteMode() ?? false;
+  plannerModelId = stateManager.getPlannerModelId();
+  executorModelId = stateManager.getExecutorModelId();
+
+  if (teamModeActive && planExecuteMode) {
+    planExecuteMode = false;
+    stateManager.setPlanExecuteMode(false);
   }
 
   // ── Banner ────────────────────────────────────────────────────────────────
@@ -148,7 +175,17 @@ async function main(): Promise<void> {
       (config.verbose ? chalk.yellow("  ·  verbose") : ""),
   );
   console.log(chalk.dim(`  Log: ${logger.getLogPath()}`));
-  console.log(chalk.dim("  Commands: /model, /skill, /team, /plan-execute, /usage, exit\n"));
+  console.log(chalk.dim("  Commands: /model, /skill, /team, /plan-execute, /think, /usage, exit\n"));
+
+  if (ollamaProvider.isThinking()) {
+    console.log(chalk.cyan(`  💭 Thinking mode ON — Qwen 3 will stream its reasoning\n`));
+  }
+
+  if (teamModeActive) {
+    console.log(chalk.cyan(`  🤝 Resuming in Team Mode (Leader: ${activeModel.id})\n`));
+  } else if (planExecuteMode) {
+    console.log(chalk.cyan(`  🧠 Resuming in Plan & Execute Mode (Planner: ${plannerModelId}, Executor: ${executorModelId})\n`));
+  }
 
   // ── REPL ──────────────────────────────────────────────────────────────────
   const rl = readline.createInterface({
@@ -244,6 +281,8 @@ async function main(): Promise<void> {
         } else {
           teamModeActive = true;
           planExecuteMode = false; // mutually exclusive
+          stateManager.setTeamModeActive(true);
+          stateManager.setPlanExecuteMode(false);
           console.log(chalk.bold.cyan("\n  🤝 Team mode ON"));
           console.log(chalk.dim(`  Leader: ${chalk.white(modelRegistry.getActiveId())}`));
           console.log(chalk.dim("  Sub-agents:"));
@@ -255,6 +294,7 @@ async function main(): Promise<void> {
         }
       } else if (cmd === "off") {
         teamModeActive = false;
+        stateManager.setTeamModeActive(false);
         console.log(chalk.dim("\n  Team mode OFF — back to single-agent.\n"));
         await logger.log("Team mode deactivated");
       } else if (cmd === "status" || !cmd) {
@@ -287,6 +327,7 @@ async function main(): Promise<void> {
         planExecuteMode = false;
         plannerModelId = undefined;
         executorModelId = undefined;
+        stateManager.setPlanExecuteMode(false);
         console.log(chalk.dim("\n  Plan & Execute mode OFF — back to standard mode.\n"));
       } else if (cmd === "status" || (!parts[2] && parts[1] !== "on")) {
         console.log(chalk.bold(`\n  Plan & Execute mode: ${planExecuteMode ? chalk.green("ON") : chalk.dim("off")}`));
@@ -315,6 +356,8 @@ async function main(): Promise<void> {
             teamModeActive = false; // mutually exclusive
             plannerModelId = p.id;
             executorModelId = e.id;
+            stateManager.setPlanExecuteMode(true, p.id, e.id);
+            stateManager.setTeamModeActive(false);
             console.log(chalk.bold.cyan("\n  🧠 Plan & Execute mode ON"));
             console.log(chalk.dim(`  Planner:  ${chalk.white(p.id)}`));
             console.log(chalk.dim(`  Executor: ${chalk.white(e.id)}\n`));
@@ -362,6 +405,39 @@ async function main(): Promise<void> {
       return;
     }
 
+    // ── /think ───────────────────────────────────────────────────────────
+    if (input.startsWith("/think")) {
+      if (isProcessing) {
+        console.log(chalk.yellow("\n  ⏳ Please wait for the current response to finish.\n"));
+        rl.prompt();
+        return;
+      }
+
+      const parts = input.split(/\s+/);
+      const cmd = parts[1];
+
+      if (cmd === "on") {
+        ollamaProvider.setThinking(true);
+        stateManager.setThinkingMode(true);
+        console.log(chalk.bold.cyan("\n  💭 Thinking mode ON"));
+        console.log(chalk.dim("  Qwen 3 (and other thinking models) will stream their reasoning in dim text before the answer.\n"));
+        await logger.log("Thinking mode activated");
+      } else if (cmd === "off") {
+        ollamaProvider.setThinking(false);
+        stateManager.setThinkingMode(false);
+        console.log(chalk.dim("\n  💭 Thinking mode OFF — answers stream immediately.\n"));
+        await logger.log("Thinking mode deactivated");
+      } else if (cmd === "status" || !cmd) {
+        const on = ollamaProvider.isThinking();
+        console.log(chalk.bold(`\n  Thinking mode: ${on ? chalk.green("ON") : chalk.dim("off")}`));
+        console.log(chalk.dim("  Affects thinking-capable models (Qwen 3, DeepSeek-R1). Other models ignore it.\n"));
+      } else {
+        console.log(chalk.dim("\n  Usage: /think on, /think off, /think status\n"));
+      }
+      rl.prompt();
+      return;
+    }
+
     // ── Request lock: reject if already processing ───────────────────────
     if (isProcessing) {
       console.log(chalk.yellow("\n  ⏳ Still thinking... please wait for the current response.\n"));
@@ -381,8 +457,14 @@ async function main(): Promise<void> {
 
     const spinner = new Spinner("Thinking");
     let firstTokenReceived = false;
+    let streamedTextPending = false;
+    let restoreSystemInstruction: string | undefined;
 
     try {
+      let currentModel = modelRegistry.getActive();
+      let currentProvider = modelRegistry.getActiveProvider();
+      let supportsTools = currentModel.supportsTools;
+
       if (planExecuteMode && plannerModelId && executorModelId) {
         // ── Plan & Execute Pipeline ─────────────────────────────────────────
         const pModel = modelRegistry.list().find(m => m.id === plannerModelId);
@@ -392,6 +474,8 @@ async function main(): Promise<void> {
         
         const pProvider = modelRegistry.getProviderFor(pModel.providerType);
         if (!pProvider) throw new Error(`No provider for ${pModel.providerType}`);
+        const eProvider = modelRegistry.getProviderFor(eModel.providerType);
+        if (!eProvider) throw new Error(`No provider for ${eModel.providerType}`);
 
         console.log(chalk.dim(`\n  🧠 Planner (${pModel.id}) is creating an execution plan...\n`));
 
@@ -406,7 +490,7 @@ async function main(): Promise<void> {
         }
 
         let planOutput = "";
-        process.stdout.write(chalk.magenta("  [Planner] "));
+        process.stdout.write(chalk.bold.magenta(`\nplanner (${pModel.id}) → `));
 
         await pProvider.streamChat({
           model: pModel.modelName,
@@ -421,20 +505,13 @@ async function main(): Promise<void> {
         console.log("\n");
         console.log(chalk.dim(`  ⚙️  Executor (${eModel.id}) is running the plan...\n`));
 
-        // Formulate the prompt for the Executor
-        const messages = ctx.getMessages();
-        messages.pop(); // remove the raw user message
-        
         const augmentedInput = `User Request:\n${input}\n\nExecution Plan:\n${planOutput}\n\nPlease execute the tools required to fulfill this plan and provide the final response.`;
-        ctx.addMessage({ role: "user", parts: [{ text: augmentedInput }] });
-        
-        // Temporarily override the active model to the executor so agentLoop uses it
-        modelRegistry.setActive(executorModelId);
-      }
+        ctx.replaceLastMessage({ role: "user", parts: [{ text: augmentedInput }] });
 
-      const currentModel = modelRegistry.getActive();
-      const currentProvider = modelRegistry.getActiveProvider();
-      const supportsTools = currentModel.supportsTools;
+        currentModel = eModel;
+        currentProvider = eProvider;
+        supportsTools = eModel.supportsTools;
+      }
 
       // In team mode, augment the system prompt with the available model list
       // so the Leader can reason about which model to assign each task to.
@@ -443,13 +520,9 @@ async function main(): Promise<void> {
           .map((m) => `- ${m.id} [${m.providerType}]${m.supportsTools ? "" : " (no tool calling)"}`)
           .join("\n");
         const teamInstruction = `\n\n---\nCRITICAL INSTRUCTION: You are operating in TEAM MODE as the Leader agent.\nYou MUST use the 'delegate_tasks' tool to break down the user's request into parallel tasks and assign them to sub-agents. DO NOT answer the prompt directly.\nAvailable models for sub-agents:\n${modelList}\nDelegate every distinct part of the request. Once they return, you will synthesise the final answer.`;
-        const baseInstruction = ctx.getSystemInstruction();
-        ctx.updateSystemMessage(baseInstruction + teamInstruction);
+        restoreSystemInstruction = ctx.getSystemInstruction();
+        ctx.updateSystemMessage(restoreSystemInstruction + teamInstruction);
         console.log(chalk.dim(`  🤝 Team mode — Leader: ${chalk.white(currentModel.id)}\n`));
-      }
-
-      if (!supportsTools) {
-        console.log(chalk.dim(`\n  ℹ️  ${currentModel.id} runs in chat-only mode (no tool calling).`));
       }
 
       const effectiveConfig = { ...config, model: currentModel.modelName };
@@ -458,6 +531,11 @@ async function main(): Promise<void> {
       spinner.start();
 
       let isFirstTurn = true;
+      const speakerLabel = teamModeActive
+        ? `leader (${currentModel.id})`
+        : planExecuteMode
+          ? `executor (${currentModel.id})`
+          : `yeti (${currentModel.id})`;
 
       await agentLoop({
         config: effectiveConfig,
@@ -468,6 +546,7 @@ async function main(): Promise<void> {
         logger,
         provider: currentProvider,
         supportsTools,
+        forcedToolNames: teamModeActive ? ["delegate_tasks"] : undefined,
         callbacks: {
           onTurnStart: () => {
             if (config.verbose) {
@@ -483,19 +562,20 @@ async function main(): Promise<void> {
             if (!firstTokenReceived) {
               firstTokenReceived = true;
               spinner.stop();
-              if (isFirstTurn) {
-                process.stdout.write(chalk.bold.magenta("\nyeti → "));
-                isFirstTurn = false;
-              } else {
-                process.stdout.write(chalk.bold.magenta("\nyeti → "));
-              }
+              process.stdout.write(chalk.bold.magenta(`\n${speakerLabel} → `));
+              isFirstTurn = false;
             }
+            streamedTextPending = true;
             process.stdout.write(token);
           },
           onToolCall: (name, args) => {
             // Stop spinner before showing tool call
             spinner.stop();
             firstTokenReceived = true;
+            if (streamedTextPending) {
+              process.stdout.write("\n");
+              streamedTextPending = false;
+            }
             printToolCall(name, args, config.verbose);
           },
           onToolResult: (name, result) => {
@@ -506,6 +586,7 @@ async function main(): Promise<void> {
             }
             // Restart spinner while waiting for next LLM turn
             firstTokenReceived = false;
+            streamedTextPending = false;
             spinner.update(name === "delegate_tasks" ? "Synthesising results" : `Processing ${name} result`);
             spinner.start();
           },
@@ -530,6 +611,18 @@ async function main(): Promise<void> {
 
       spinner.stop();
 
+      // Terminate the streamed line so readline.prompt()'s cursor reset
+      // doesn't overwrite the model's final response.
+      if (streamedTextPending) {
+        process.stdout.write("\n\n");
+        streamedTextPending = false;
+        if (config.verbose) {
+          console.log(chalk.dim("─".repeat(40)));
+        }
+      }
+
+      maybePrintContextHint(ctx);
+
       const messages = ctx.getMessages();
       const lastMsg = messages[messages.length - 1];
       if (lastMsg.role === "model" && lastMsg.parts?.[0]?.text) {
@@ -537,10 +630,17 @@ async function main(): Promise<void> {
       }
     } catch (err: unknown) {
       spinner.stop();
+      if (streamedTextPending) {
+        process.stdout.write("\n");
+        streamedTextPending = false;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.log(chalk.red(`\n\n  ❌  Error: ${message}\n`));
       await logger.log(`Error: ${message}`);
     } finally {
+      if (restoreSystemInstruction) {
+        ctx.updateSystemMessage(restoreSystemInstruction);
+      }
       isProcessing = false;
     }
 

@@ -4,6 +4,11 @@ import * as os from "os";
 
 export interface AppState {
   lastModel?: string;
+  teamModeActive?: boolean;
+  planExecuteMode?: boolean;
+  plannerModelId?: string;
+  executorModelId?: string;
+  thinkingMode?: boolean;
 }
 
 export class StateManager {
@@ -44,6 +49,43 @@ export class StateManager {
 
   setLastModel(model: string): void {
     this.state.lastModel = model;
+    this.save();
+  }
+
+  getTeamModeActive(): boolean | undefined {
+    return this.state.teamModeActive;
+  }
+
+  setTeamModeActive(active: boolean): void {
+    this.state.teamModeActive = active;
+    this.save();
+  }
+
+  getPlanExecuteMode(): boolean | undefined {
+    return this.state.planExecuteMode;
+  }
+
+  getPlannerModelId(): string | undefined {
+    return this.state.plannerModelId;
+  }
+
+  getExecutorModelId(): string | undefined {
+    return this.state.executorModelId;
+  }
+
+  setPlanExecuteMode(active: boolean, planner?: string, executor?: string): void {
+    this.state.planExecuteMode = active;
+    if (planner) this.state.plannerModelId = planner;
+    if (executor) this.state.executorModelId = executor;
+    this.save();
+  }
+
+  getThinkingMode(): boolean {
+    return this.state.thinkingMode ?? false;
+  }
+
+  setThinkingMode(active: boolean): void {
+    this.state.thinkingMode = active;
     this.save();
   }
 }

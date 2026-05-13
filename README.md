@@ -1,6 +1,6 @@
 # 🧊 YetiMind
 
-YetiMind is a streaming terminal AI assistant powered by the **Google Gemini SDK**. It features an agentic tool-calling loop, a skills system for specialized personas, and real-time streaming output.
+YetiMind is a streaming terminal AI assistant for **Google Gemini** and local **Ollama** models. It features an agentic tool-calling loop, a skills system for specialized personas, and real-time streaming output.
 
 ## ✨ Features
 
@@ -17,9 +17,8 @@ YetiMind is a streaming terminal AI assistant powered by the **Google Gemini SDK
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18 or higher recommended)
-- A [Google Gemini API Key](https://aistudio.google.com/apikey)
-- (Optional) [Ollama](https://ollama.com/) for running local LLMs
+- [Node.js](https://nodejs.org/) (v20 or higher recommended)
+- A [Google Gemini API Key](https://aistudio.google.com/apikey) or [Ollama](https://ollama.com/) for running local LLMs
 
 ### Installation
 
@@ -33,7 +32,7 @@ Create a `.env` file in the root directory:
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here
-MODEL=gemini-2.0-flash
+MODEL=qwen3:4b
 MAX_CONTEXT_TOKENS=8000
 ```
 
@@ -61,11 +60,12 @@ Usage: yetimind [options]
 
 Options:
   -V, --version          output the version number
-  -m, --model <model>    LLM model to use (default: gemini-2.0-flash)
-  -v, --verbose          print full message array and tool details
+  -m, --model <model>    LLM model to use
+  -v, --verbose          print full message array before each API call
   --max-tokens <number>  hard limit for context window (in tokens)
-  --max-turns <number>   max tool-call turns per session (default: 10)
+  --max-turns <number>   max tool-call turns per user message (default: 10)
   -s, --skill <name>     activate a skill at startup
+  --ollama-url <url>     Ollama server URL
   -h, --help             display help for command
 ```
 
@@ -90,13 +90,14 @@ Switch between specialized personas using CLI flags or in-session commands:
 
 ```bash
 # Start with a specific skill
-node dist/cli.js --skill coder
+node dist/presentation/cli/index.js --skill coder
 
 # In-session commands
 /skill list              # List available skills
 /skill use researcher    # Switch to researcher mode
 /model                   # Open interactive model picker
 /team on                 # Enable multi-agent Leader-Worker team mode
+/plan-execute status     # Display planner/executor mode status
 /usage                   # Display current context and token usage stats
 ```
 
@@ -104,7 +105,7 @@ node dist/cli.js --skill coder
 
 | Skill | Description | Tools |
 |-------|-------------|-------|
-| `default` | General-purpose assistant | All tools |
+| `default` | General-purpose assistant | read_file, write_file, shell |
 | `coder` | Expert software engineer | read_file, write_file, edit_file, delete_file, list_dir, create_dir, move_file, search_files, shell |
 | `researcher` | Analysis and synthesis specialist | search_files |
 | `explainer` | Step-by-step concept teacher | None |

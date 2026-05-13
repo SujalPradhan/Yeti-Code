@@ -25,17 +25,10 @@ export interface ParallelRunCallbacks {
 export class TeamOrchestrator {
   constructor(private readonly modelRegistry: ModelRegistry) {}
 
-  /**
-   * Resolve the correct LLMProvider for a modelId.
-   * Falls back to the active provider if the modelId is unrecognised.
-   */
   private resolveProvider(modelId: string) {
     const model = this.modelRegistry.list().find((m) => m.id === modelId);
     if (!model) {
-      return {
-        provider: this.modelRegistry.getActiveProvider(),
-        modelName: modelId,
-      };
+      throw new Error(`Unknown sub-agent model "${modelId}"`);
     }
     const provider = this.modelRegistry.getProviderFor(model.providerType);
     if (!provider) {
