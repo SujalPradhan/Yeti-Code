@@ -117,7 +117,9 @@ async function main(): Promise<void> {
     const ollamaAvailable = await ollamaProvider.isAvailable();
     if (ollamaAvailable) {
       const localModels = await ollamaProvider.listModels();
-      const toolSupportedModels = ["mistral", "llama3", "llama3.1", "qwen2.5", "qwen3", "command-r"];
+      // Verified locally via tests/gemma4-smoke.ts on 2026-05-14: gemma4:e4b's
+      // tool_calls stream cleanly through Ollama's OpenAI-compat endpoint.
+      const toolSupportedModels = ["mistral", "llama3", "llama3.1", "qwen2.5", "qwen3", "gemma4", "command-r"];
       for (const modelName of localModels) {
         const supportsTools = toolSupportedModels.some((m) => modelName.toLowerCase().startsWith(m));
         modelRegistry.addModel({
