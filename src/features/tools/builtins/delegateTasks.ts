@@ -93,6 +93,18 @@ export const delegateTasksTool: Tool = {
       }
     }
 
+    // Team mode is Qwen-only: override whatever the leader chose with the
+    // best available Qwen. Keeps every worker on the same instruction-tuned
+    // family for predictable tool-calling behavior, and lets the model
+    // delegate without having to know exact local-model ids.
+    let workerModelId: string;
+    try {
+      workerModelId = orchestrator.pickWorkerModelId();
+    } catch (e) {
+      return `Error: ${(e as Error).message}`;
+    }
+    rawTasks = rawTasks.map((t) => ({ ...t, modelId: workerModelId }));
+
     const plan: TeamPlan = { reasoning, tasks: rawTasks };
 
     // Log the plan

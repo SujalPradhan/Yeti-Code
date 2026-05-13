@@ -41,7 +41,7 @@ export class ConversationContext {
   constructor(maxTokens: number) {
     this.maxTokens = maxTokens;
     this.systemInstruction =
-      "You are YetiMind, a helpful and concise terminal AI assistant. " +
+      "You are yeti-code, a helpful and concise terminal AI agent. " +
       "Answer clearly and directly. Use markdown formatting when helpful. " +
       "You have access to tools for reading files, writing files, and running shell commands. " +
       "Use them when the user's request requires interacting with the filesystem or running commands.";
@@ -76,6 +76,12 @@ export class ConversationContext {
   /** Update the system instruction (for skill switching). */
   updateSystemMessage(content: string): void {
     this.systemInstruction = content;
+  }
+
+  /** Drop all conversation history. The system instruction is preserved. */
+  clear(): void {
+    this.messages = [];
+    this.lastUsage = null;
   }
 
   setLastUsage(usage: UsageStats): void {

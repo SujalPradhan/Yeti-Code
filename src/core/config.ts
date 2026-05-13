@@ -22,8 +22,8 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
   const program = new Command();
 
   program
-    .name("yetimind")
-    .description("YetiMind — a streaming terminal AI assistant")
+    .name("yeti-code")
+    .description("Yeti Code — a streaming terminal AI agent")
     .version("0.1.0")
     .option("-m, --model <model>", "LLM model to use")
     .option("-v, --verbose", "print full message array before each API call")

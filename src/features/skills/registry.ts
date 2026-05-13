@@ -11,8 +11,8 @@ export class SkillRegistry {
     // Default fallback skill
     this.register({
       name: "default",
-      description: "Default YetiMind assistant.",
-      systemPrompt: "You are YetiMind, a helpful and concise terminal AI assistant. Answer clearly and directly. Use markdown formatting when helpful.",
+      description: "Default yeti-code assistant.",
+      systemPrompt: "You are yeti-code, a helpful and concise terminal AI agent for the IITM Tools-in-Data-Science course. Answer clearly and directly. Use markdown formatting when helpful.",
       tools: ["read_file", "write_file", "shell"]
     });
   }

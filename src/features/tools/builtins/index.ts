@@ -25,7 +25,15 @@ import {
   findFilesTool,
   runScriptTool,
 } from "./dev";
-import { fetchUrlTool } from "./web";
+import { fetchUrlTool, extractHtmlTool } from "./web";
+import {
+  httpRequestTool,
+  jsonQueryTool,
+  csvInfoTool,
+  encodeTool,
+  decodeTool,
+} from "./course";
+import { sqlQueryTool, pythonEvalTool, pdfToMdTool } from "./data";
 
 /** Register all built-in tools into a registry. */
 export function registerBuiltins(
@@ -58,6 +66,19 @@ export function registerBuiltins(
 
   // Web
   registry.register(fetchUrlTool);
+  registry.register(extractHtmlTool);
+
+  // Course-aligned: APIs, JSON, CSV, encodings
+  registry.register(httpRequestTool);
+  registry.register(jsonQueryTool);
+  registry.register(csvInfoTool);
+  registry.register(encodeTool);
+  registry.register(decodeTool);
+
+  // Data analysis
+  registry.register(sqlQueryTool);
+  registry.register(pythonEvalTool);
+  registry.register(pdfToMdTool);
 
   // Team
   registry.register(delegateTasksTool);

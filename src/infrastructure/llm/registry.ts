@@ -95,4 +95,38 @@ export class ModelRegistry {
   getProviderFor(providerType: string): import("./types").LLMProvider | undefined {
     return this.providers.get(providerType);
   }
+
+  /**
+   * List all locally-available Qwen models, tool-capable first then by id
+   * (which roughly orders by size since "qwen3:32b" > "qwen3:4b" lexically
+   * only sometimes — caller should pick deliberately).
+   */
+  listQwen(): ModelConfig[] {
+    return this.list().filter(
+      (m) =>
+        m.available &&
+        m.providerType === "ollama" &&
+        m.id.toLowerCase().startsWith("qwen"),
+    );
+  }
+
+  /**
+   * Pick the best Qwen for team work: prefers tool-capable variants and,
+   * within those, the largest by extracted parameter count (e.g. qwen3:14b
+   * over qwen3:4b). Returns undefined if no Qwen is registered.
+   */
+  pickBestQwen(): ModelConfig | undefined {
+    const qwens = this.listQwen();
+    if (qwens.length === 0) return undefined;
+    const sizeOf = (id: string): number => {
+      const m = id.match(/:(\d+(?:\.\d+)?)b/i);
+      return m ? parseFloat(m[1]) : 0;
+    };
+    const sorted = [...qwens].sort((a, b) => {
+      // tool support wins first
+      if (a.supportsTools !== b.supportsTools) return a.supportsTools ? -1 : 1;
+      return sizeOf(b.id) - sizeOf(a.id);
+    });
+    return sorted[0];
+  }
 }

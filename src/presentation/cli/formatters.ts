@@ -6,8 +6,8 @@ import type { ModelConfig } from "../../infrastructure/llm/registry";
 
 export const BANNER = `
 ${chalk.bold.cyan("╔══════════════════════════════════════╗")}
-${chalk.bold.cyan("║")}  ${chalk.bold.white("🧊  YetiMind")}  ${chalk.dim("v0.1.0")}                ${chalk.bold.cyan("║")}
-${chalk.bold.cyan("║")}  ${chalk.dim("Streaming terminal AI assistant")}     ${chalk.bold.cyan("║")}
+${chalk.bold.cyan("║")}  ${chalk.bold.white("🧊  yeti-code")}  ${chalk.dim("v0.1.0")}               ${chalk.bold.cyan("║")}
+${chalk.bold.cyan("║")}  ${chalk.dim("Terminal based AI agent")}        ${chalk.bold.cyan("║")}
 ${chalk.bold.cyan("╚══════════════════════════════════════╝")}
 `;
 
@@ -19,8 +19,8 @@ export function printUsage(stats: UsageStats | null, ctx: ConversationContext): 
     console.log(
       chalk.dim(
         `  │ prompt: ${chalk.white(String(stats.promptTokens))}` +
-          `  completion: ${chalk.white(String(stats.completionTokens))}` +
-          `  total: ${chalk.white(String(stats.totalTokens))}`,
+        `  completion: ${chalk.white(String(stats.completionTokens))}` +
+        `  total: ${chalk.white(String(stats.totalTokens))}`,
       ),
     );
   } else {
@@ -118,6 +118,46 @@ function summarizeToolArgs(name: string, args: Record<string, unknown>): string 
     case "fetch_url": {
       const url = args["url"];
       return typeof url === "string" ? truncate(url, 80) : "";
+    }
+    case "http_request": {
+      const url = args["url"];
+      const method = (args["method"] as string) ?? "GET";
+      return typeof url === "string" ? `${method.toUpperCase()} ${truncate(url, 70)}` : "";
+    }
+    case "json_query": {
+      const q = args["query"];
+      const p = args["path"];
+      const where = typeof p === "string" ? p : "<inline>";
+      return typeof q === "string" ? `${q} ← ${truncate(where, 28)}` : "";
+    }
+    case "csv_info": {
+      const p = args["path"];
+      return typeof p === "string" ? truncate(p) : "";
+    }
+    case "extract_html": {
+      const sel = args["selector"];
+      const p = args["path"];
+      const where = typeof p === "string" ? ` ← ${truncate(p, 24)}` : "";
+      return typeof sel === "string" ? `'${sel}'${where}` : "";
+    }
+    case "encode":
+    case "decode": {
+      const codec = args["codec"];
+      const text = args["text"];
+      const preview = typeof text === "string" ? truncate(text, 30) : "";
+      return typeof codec === "string" ? `${codec} "${preview}"` : "";
+    }
+    case "sql_query": {
+      const q = args["query"];
+      return typeof q === "string" ? truncate(q.replace(/\s+/g, " "), 70) : "";
+    }
+    case "python_eval": {
+      const code = args["code"];
+      return typeof code === "string" ? truncate(code.replace(/\s+/g, " "), 70) : "";
+    }
+    case "pdf_to_md": {
+      const p = args["path"];
+      return typeof p === "string" ? truncate(p) : "";
     }
     case "shell":
     case "run_shell":

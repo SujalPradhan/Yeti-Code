@@ -1,10 +1,10 @@
 {
-  "name": "yetimind",
+  "name": "yeti-code",
   "version": "0.1.0",
-  "description": "YetiMind — a streaming terminal AI assistant",
+  "description": "Yeti Code — a streaming terminal AI agent for the IITM Tools-in-Data-Science course",
   "main": "dist/presentation/cli/index.js",
   "bin": {
-    "yetimind": "dist/presentation/cli/index.js"
+    "yeti-code": "dist/presentation/cli/index.js"
   },
   "scripts": {
     "build": "tsc",

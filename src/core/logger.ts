@@ -6,7 +6,7 @@ export class SessionLogger {
   private logPath: string;
 
   constructor() {
-    this.logPath = path.join(os.homedir(), ".yetimind", "logs", `session_${Date.now()}.log`);
+    this.logPath = path.join(os.homedir(), ".yeti-code", "logs", `session_${Date.now()}.log`);
   }
 
   async init(): Promise<void> {

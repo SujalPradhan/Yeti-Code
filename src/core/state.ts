@@ -16,7 +16,7 @@ export class StateManager {
   private state: AppState = {};
 
   constructor() {
-    this.statePath = path.join(os.homedir(), ".yetimind", "state.json");
+    this.statePath = path.join(os.homedir(), ".yeti-code", "state.json");
     this.load();
   }
 

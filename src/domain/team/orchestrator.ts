@@ -25,6 +25,22 @@ export interface ParallelRunCallbacks {
 export class TeamOrchestrator {
   constructor(private readonly modelRegistry: ModelRegistry) {}
 
+  /**
+   * Team mode is Qwen-only — return the modelId every sub-agent should use.
+   * The leader rewrites each task.modelId to this before running. Throws if
+   * no Qwen is registered (which /team on already guards against).
+   */
+  pickWorkerModelId(): string {
+    const qwen = this.modelRegistry.pickBestQwen();
+    if (!qwen) {
+      throw new Error(
+        "Team mode requires at least one Qwen model from Ollama. " +
+          "Pull one with: ollama pull qwen3:4b",
+      );
+    }
+    return qwen.id;
+  }
+
   private resolveProvider(modelId: string) {
     const model = this.modelRegistry.list().find((m) => m.id === modelId);
     if (!model) {

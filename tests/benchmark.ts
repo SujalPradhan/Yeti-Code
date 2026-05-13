@@ -22,6 +22,13 @@ import {
 } from "../src/features/tools/builtins/text";
 import { findFilesTool } from "../src/features/tools/builtins/dev";
 import { readFileTool, searchFilesTool } from "../src/features/tools/builtins/fs";
+import {
+  jsonQueryTool,
+  csvInfoTool,
+  encodeTool,
+  decodeTool,
+} from "../src/features/tools/builtins/course";
+import { extractHtmlTool } from "../src/features/tools/builtins/web";
 import { ThinkStripper } from "../src/infrastructure/llm/ollama";
 import type { ToolContext } from "../src/features/tools/types";
 import type { SessionLogger } from "../src/core/logger";
@@ -106,7 +113,7 @@ async function main(): Promise<void> {
   const prevCwd = process.cwd();
   process.chdir(root);
 
-  console.log(`# YetiMind tool benchmarks`);
+  console.log(`# yeti-code tool benchmarks`);
   console.log(`# fixture: ${root}`);
   console.log(`# iterations per scenario: ${ITERATIONS} (warmup: ${WARMUP})`);
   console.log(`# node ${process.version}, ${os.platform()} ${os.arch()}, ${os.cpus()[0]?.model ?? "?"}\n`);
@@ -204,6 +211,61 @@ async function main(): Promise<void> {
         );
       },
     ),
+  );
+
+  // ── Course tools ──────────────────────────────────────────────────────────
+  const sampleJson = JSON.stringify({
+    users: Array.from({ length: 1000 }, (_, i) => ({
+      id: i,
+      name: `user_${i}`,
+      tags: ["a", "b", i % 2 === 0 ? "even" : "odd"],
+    })),
+  });
+  fs.writeFileSync(path.join(root, "data.json"), sampleJson);
+  results.push(
+    await bench("json_query (1000-item array)", async () => {
+      await jsonQueryTool.execute(
+        { path: "data.json", query: ".users[500].name" },
+        fakeCtx,
+      );
+    }),
+  );
+
+  // CSV: 1000 rows
+  const csvLines = ["id,name,score,joined"];
+  for (let i = 0; i < 1000; i++) {
+    csvLines.push(`${i},user${i},${(i * 0.7).toFixed(2)},2024-${(i % 12) + 1}-15`);
+  }
+  fs.writeFileSync(path.join(root, "big.csv"), csvLines.join("\n"));
+  results.push(
+    await bench("csv_info (1000 rows × 4 cols)", async () => {
+      await csvInfoTool.execute({ path: "big.csv" }, fakeCtx);
+    }),
+  );
+
+  // Encoding round-trip
+  const encPayload = "x".repeat(2000);
+  results.push(
+    await bench("encode base64 (2KB)", async () => {
+      await encodeTool.execute({ text: encPayload, codec: "base64" }, fakeCtx);
+    }),
+  );
+  const b64 = Buffer.from(encPayload).toString("base64");
+  results.push(
+    await bench("decode base64 (2KB)", async () => {
+      await decodeTool.execute({ text: b64, codec: "base64" }, fakeCtx);
+    }),
+  );
+
+  // HTML extraction
+  const htmlBlock =
+    "<html><body>" +
+    Array.from({ length: 200 }, (_, i) => `<div class="row"><a href="/x/${i}">link ${i}</a></div>`).join("") +
+    "</body></html>";
+  results.push(
+    await bench("extract_html ('a[href]' across 200 rows)", async () => {
+      await extractHtmlTool.execute({ html: htmlBlock, selector: "a[href]" }, fakeCtx);
+    }),
   );
 
   // ── ThinkStripper micro-bench (pure CPU) ──────────────────────────────────

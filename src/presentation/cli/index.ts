@@ -45,7 +45,7 @@ function maybePrintContextHint(ctx: ConversationContext): void {
     if (pct >= t && lastContextWarnPct < t) {
       lastContextWarnPct = t;
       const color = t >= 95 ? chalk.red : t >= 85 ? chalk.yellow : chalk.dim;
-      console.log(color(`  ⚠ context ${pct}% full — /usage for details`));
+      console.log(color(`  ⚠ context ${pct}% full — /cost for details`));
       break;
     }
   }
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
   // ── Skills & Tools ────────────────────────────────────────────────────────
   const skillRegistry = new SkillRegistry();
-  await skillRegistry.loadFromDirectory("~/.yetimind/skills");
+  await skillRegistry.loadFromDirectory("~/.yeti-code/skills");
   await skillRegistry.loadFromDirectory("./skills/builtins");
 
   if (config.skill) {
@@ -175,7 +175,7 @@ async function main(): Promise<void> {
       (config.verbose ? chalk.yellow("  ·  verbose") : ""),
   );
   console.log(chalk.dim(`  Log: ${logger.getLogPath()}`));
-  console.log(chalk.dim("  Commands: /model, /skill, /team, /plan-execute, /think, /usage, exit\n"));
+  console.log(chalk.dim("  Type /help to see commands.\n"));
 
   if (ollamaProvider.isThinking()) {
     console.log(chalk.cyan(`  💭 Thinking mode ON — Qwen 3 will stream its reasoning\n`));
@@ -205,13 +205,51 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit") {
+    if (input.toLowerCase() === "exit" || input.toLowerCase() === "quit" || input === "/exit" || input === "/quit") {
       console.log(chalk.dim("\n👋  Goodbye!\n"));
       process.exit(0);
     }
 
-    // ── /usage ───────────────────────────────────────────────────────────
-    if (input === "/usage") {
+    // ── /help ────────────────────────────────────────────────────────────
+    if (input === "/help" || input === "/?") {
+      console.log(chalk.bold("\n  yeti-code commands\n"));
+      const rows: Array<[string, string]> = [
+        ["/help", "show this list"],
+        ["/clear", "reset the conversation (keep active skill)"],
+        ["/cost", "show token usage for the last turn + session estimate"],
+        ["/model [list|pick|use <id>]", "show or switch the active model"],
+        ["/skill [list|use <name>]", "show or switch the active skill"],
+        ["/team [on|off|status]", "toggle multi-agent team mode (Qwen-only)"],
+        ["/plan [<planner> <executor>|off|status]", "toggle Plan & Execute pipeline"],
+        ["/think [on|off|status]", "toggle Qwen 3 thinking-mode stream"],
+        ["/exit", "quit (also: exit, quit)"],
+      ];
+      for (const [cmd, desc] of rows) {
+        console.log(`  ${chalk.cyan(cmd.padEnd(40))} ${chalk.dim(desc)}`);
+      }
+      console.log("");
+      rl.prompt();
+      return;
+    }
+
+    // ── /clear ───────────────────────────────────────────────────────────
+    if (input === "/clear") {
+      if (isProcessing) {
+        console.log(chalk.yellow("\n  ⏳ Please wait for the current response to finish.\n"));
+        rl.prompt();
+        return;
+      }
+      ctx.clear();
+      ctx.updateSystemMessage(skillRegistry.getActive().systemPrompt);
+      lastContextWarnPct = 0;
+      console.log(chalk.dim("\n  🧹 Conversation cleared.\n"));
+      await logger.log("Conversation cleared");
+      rl.prompt();
+      return;
+    }
+
+    // ── /cost  (alias: /usage) ───────────────────────────────────────────
+    if (input === "/cost" || input === "/usage") {
       const usage = ctx.getLastUsage();
       printUsage(usage, ctx);
       rl.prompt();
@@ -269,28 +307,36 @@ async function main(): Promise<void> {
 
       const parts = input.split(/\s+/);
       const cmd = parts[1];
-      const availableSubAgents = modelRegistry.list().filter(
-        (m) => m.id !== modelRegistry.getActiveId(),
-      );
+      const qwens = modelRegistry.listQwen();
+      const bestQwen = modelRegistry.pickBestQwen();
 
       if (cmd === "on") {
-        if (availableSubAgents.length === 0) {
-          console.log(chalk.red("\n  ❌ No sub-agent models available. Pull a local model with Ollama first.\n"));
-        } else if (!modelRegistry.getActive().supportsTools) {
-          console.log(chalk.red(`\n  ❌ The current model (${modelRegistry.getActiveId()}) doesn't support tool calling and cannot be the Leader. Switch to a tool-capable model first.\n`));
+        if (!bestQwen) {
+          console.log(chalk.red("\n  ❌ Team mode requires at least one Qwen model from Ollama."));
+          console.log(chalk.dim("     Pull one with: ") + chalk.cyan("ollama pull qwen3:4b") + chalk.dim("\n"));
+        } else if (!bestQwen.supportsTools) {
+          console.log(chalk.red(`\n  ❌ The best Qwen on this machine (${bestQwen.id}) does not support tool calling.`));
+          console.log(chalk.dim("     Pull a tool-capable variant: ") + chalk.cyan("ollama pull qwen3:4b") + "\n");
         } else {
+          // Force the leader to Qwen — team mode is Qwen-only by design.
+          if (modelRegistry.getActiveId() !== bestQwen.id) {
+            modelRegistry.setActive(bestQwen.id);
+            stateManager.setLastModel(bestQwen.id);
+            console.log(chalk.dim(`  Switched leader → ${chalk.white(bestQwen.id)}`));
+          }
           teamModeActive = true;
           planExecuteMode = false; // mutually exclusive
           stateManager.setTeamModeActive(true);
           stateManager.setPlanExecuteMode(false);
-          console.log(chalk.bold.cyan("\n  🤝 Team mode ON"));
-          console.log(chalk.dim(`  Leader: ${chalk.white(modelRegistry.getActiveId())}`));
-          console.log(chalk.dim("  Sub-agents:"));
-          for (const m of availableSubAgents) {
-            console.log(chalk.dim(`    • ${m.id} [${m.providerType}]${m.supportsTools ? "" : " · no tools"}`) );
+          console.log(chalk.bold.cyan("\n  🤝 Team mode ON  ") + chalk.dim("(Qwen-only)"));
+          console.log(chalk.dim(`  Leader: ${chalk.white(bestQwen.id)}`));
+          console.log(chalk.dim("  Workers (Qwen pool):"));
+          for (const m of qwens) {
+            const tag = m.id === bestQwen.id ? chalk.green(" ← primary") : "";
+            console.log(chalk.dim(`    • ${m.id} [${m.providerType}]${m.supportsTools ? "" : " · no tools"}${tag}`));
           }
-          console.log(chalk.dim("\n  The Leader will call 'delegate_tasks' to assign parallel work.\n"));
-          await logger.log("Team mode activated");
+          console.log(chalk.dim("\n  The leader will call 'delegate_tasks'; every worker is forced to Qwen.\n"));
+          await logger.log(`Team mode activated (Qwen leader: ${bestQwen.id})`);
         }
       } else if (cmd === "off") {
         teamModeActive = false;
@@ -298,11 +344,16 @@ async function main(): Promise<void> {
         console.log(chalk.dim("\n  Team mode OFF — back to single-agent.\n"));
         await logger.log("Team mode deactivated");
       } else if (cmd === "status" || !cmd) {
-        console.log(chalk.bold(`\n  Team mode: ${teamModeActive ? chalk.green("ON") : chalk.dim("off")}`));
-        console.log(chalk.dim(`  Leader model: ${modelRegistry.getActiveId()}  (tool calling: ${modelRegistry.getActive().supportsTools ? "✓" : "✗"})`));
-        console.log(chalk.bold("\n  Available sub-agents:"));
-        for (const m of availableSubAgents) {
-          console.log(`    ${chalk.cyan(m.id.padEnd(24))} [${m.providerType}]${m.supportsTools ? "" : chalk.dim(" · no tools")}`);
+        console.log(chalk.bold(`\n  Team mode: ${teamModeActive ? chalk.green("ON") : chalk.dim("off")}  ${chalk.dim("(Qwen-only)")}`));
+        console.log(chalk.dim(`  Active model: ${modelRegistry.getActiveId()}  (tool calling: ${modelRegistry.getActive().supportsTools ? "✓" : "✗"})`));
+        console.log(chalk.bold("\n  Qwen pool:"));
+        if (qwens.length === 0) {
+          console.log(chalk.dim("    (none — pull one: ollama pull qwen3:4b)"));
+        } else {
+          for (const m of qwens) {
+            const tag = bestQwen && m.id === bestQwen.id ? chalk.green(" ← primary") : "";
+            console.log(`    ${chalk.cyan(m.id.padEnd(24))} [${m.providerType}]${m.supportsTools ? "" : chalk.dim(" · no tools")}${tag}`);
+          }
         }
         console.log("");
       } else {
@@ -312,8 +363,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    // ── /plan-execute ────────────────────────────────────────────────────────
-    if (input.startsWith("/plan-execute") || input.startsWith("/plan")) {
+    // ── /plan  (alias: /plan-execute) ─────────────────────────────────────
+    if (input.startsWith("/plan")) {
       if (isProcessing) {
         console.log(chalk.yellow("\n  ⏳ Please wait for the current response to finish.\n"));
         rl.prompt();
@@ -337,11 +388,11 @@ async function main(): Promise<void> {
         }
         console.log("");
       } else {
-        // Usage: /plan-execute <planner> <executor>
+        // Usage: /plan <planner> <executor>
         const pModel = parts[1];
         const eModel = parts[2];
         if (!pModel || !eModel) {
-          console.log(chalk.dim("\n  Usage: /plan-execute <planner_id> <executor_id> (e.g. /plan-execute gemma3:4b qwen3:4b)\n  Or: /plan-execute off\n"));
+          console.log(chalk.dim("\n  Usage: /plan <planner_id> <executor_id> (e.g. /plan gemma3:4b qwen3:4b)\n  Or: /plan off\n"));
         } else {
           const p = modelRegistry.list().find(m => m.id === pModel);
           const e = modelRegistry.list().find(m => m.id === eModel);
