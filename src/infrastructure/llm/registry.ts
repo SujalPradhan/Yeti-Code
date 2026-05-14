@@ -97,36 +97,61 @@ export class ModelRegistry {
   }
 
   /**
-   * List all locally-available Qwen models, tool-capable first then by id
-   * (which roughly orders by size since "qwen3:32b" > "qwen3:4b" lexically
-   * only sometimes — caller should pick deliberately).
+   * Family-preference order for picking an agentic worker. Earlier wins.
+   * gemma4 sits at the top because it's our verified default; the rest
+   * are documented tool-callers we trust to behave in the agent loop.
    */
-  listQwen(): ModelConfig[] {
+  private static readonly WORKER_FAMILIES = [
+    "gemma4",
+    "qwen3",
+    "qwen2.5",
+    "llama3.1",
+    "llama3",
+    "mistral",
+    "command-r",
+  ];
+
+  /**
+   * List all locally-available, tool-capable Ollama models whose id starts
+   * with a known agentic family. Used by team mode to enumerate workers.
+   */
+  listToolWorkers(): ModelConfig[] {
     return this.list().filter(
       (m) =>
         m.available &&
         m.providerType === "ollama" &&
-        m.id.toLowerCase().startsWith("qwen"),
+        m.supportsTools &&
+        ModelRegistry.WORKER_FAMILIES.some((f) =>
+          m.id.toLowerCase().startsWith(f),
+        ),
     );
   }
 
   /**
-   * Pick the best Qwen for team work: prefers tool-capable variants and,
-   * within those, the largest by extracted parameter count (e.g. qwen3:14b
-   * over qwen3:4b). Returns undefined if no Qwen is registered.
+   * Pick the best worker for team mode. Two-level sort:
+   *   1. earlier in WORKER_FAMILIES wins (gemma4 before qwen3, …)
+   *   2. within a family, largest by extracted `:Nb` size wins
+   * Returns undefined when no compatible worker is registered.
    */
-  pickBestQwen(): ModelConfig | undefined {
-    const qwens = this.listQwen();
-    if (qwens.length === 0) return undefined;
+  pickBestWorker(): ModelConfig | undefined {
+    const workers = this.listToolWorkers();
+    if (workers.length === 0) return undefined;
+    const familyRank = (id: string): number => {
+      const lower = id.toLowerCase();
+      const idx = ModelRegistry.WORKER_FAMILIES.findIndex((f) =>
+        lower.startsWith(f),
+      );
+      return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+    };
     const sizeOf = (id: string): number => {
       const m = id.match(/:(\d+(?:\.\d+)?)b/i);
       return m ? parseFloat(m[1]) : 0;
     };
-    const sorted = [...qwens].sort((a, b) => {
-      // tool support wins first
-      if (a.supportsTools !== b.supportsTools) return a.supportsTools ? -1 : 1;
+    return [...workers].sort((a, b) => {
+      const fa = familyRank(a.id);
+      const fb = familyRank(b.id);
+      if (fa !== fb) return fa - fb;
       return sizeOf(b.id) - sizeOf(a.id);
-    });
-    return sorted[0];
+    })[0];
   }
 }

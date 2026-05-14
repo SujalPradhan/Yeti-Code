@@ -309,36 +309,55 @@ async function main(): Promise<void> {
 
       const parts = input.split(/\s+/);
       const cmd = parts[1];
-      const qwens = modelRegistry.listQwen();
-      const bestQwen = modelRegistry.pickBestQwen();
+      const workers = modelRegistry.listToolWorkers();
+      const best = modelRegistry.pickBestWorker();
 
       if (cmd === "on") {
-        if (!bestQwen) {
-          console.log(chalk.red("\n  ❌ Team mode requires at least one Qwen model from Ollama."));
-          console.log(chalk.dim("     Pull one with: ") + chalk.cyan("ollama pull qwen3:4b") + chalk.dim("\n"));
-        } else if (!bestQwen.supportsTools) {
-          console.log(chalk.red(`\n  ❌ The best Qwen on this machine (${bestQwen.id}) does not support tool calling.`));
-          console.log(chalk.dim("     Pull a tool-capable variant: ") + chalk.cyan("ollama pull qwen3:4b") + "\n");
+        if (!best) {
+          console.log(chalk.red("\n  ❌ Team mode needs a tool-capable Ollama model."));
+          console.log(chalk.dim("     Install one with: ") + chalk.cyan("ollama pull gemma4:e4b") + chalk.dim("\n"));
         } else {
-          // Force the leader to Qwen — team mode is Qwen-only by design.
-          if (modelRegistry.getActiveId() !== bestQwen.id) {
-            modelRegistry.setActive(bestQwen.id);
-            stateManager.setLastModel(bestQwen.id);
-            console.log(chalk.dim(`  Switched leader → ${chalk.white(bestQwen.id)}`));
+          if (modelRegistry.getActiveId() !== best.id) {
+            modelRegistry.setActive(best.id);
+            stateManager.setLastModel(best.id);
+            console.log(chalk.dim(`  Switched leader → ${chalk.white(best.id)}`));
           }
           teamModeActive = true;
-          planExecuteMode = false; // mutually exclusive
+          planExecuteMode = false;
           stateManager.setTeamModeActive(true);
           stateManager.setPlanExecuteMode(false);
-          console.log(chalk.bold.cyan("\n  🤝 Team mode ON  ") + chalk.dim("(Qwen-only)"));
-          console.log(chalk.dim(`  Leader: ${chalk.white(bestQwen.id)}`));
-          console.log(chalk.dim("  Workers (Qwen pool):"));
-          for (const m of qwens) {
-            const tag = m.id === bestQwen.id ? chalk.green(" ← primary") : "";
-            console.log(chalk.dim(`    • ${m.id} [${m.providerType}]${m.supportsTools ? "" : " · no tools"}${tag}`));
+          console.log(chalk.bold.cyan("\n  🤝 Team mode ON"));
+          console.log(chalk.dim(`  Leader: ${chalk.white(best.id)}`));
+          console.log(chalk.dim("  Workers:"));
+          for (const m of workers) {
+            const tag = m.id === best.id ? chalk.green(" ← primary") : "";
+            console.log(chalk.dim(`    • ${m.id} [${m.providerType}]${tag}`));
           }
-          console.log(chalk.dim("\n  The leader will call 'delegate_tasks'; every worker is forced to Qwen.\n"));
-          await logger.log(`Team mode activated (Qwen leader: ${bestQwen.id})`);
+          console.log(chalk.dim(`\n  The leader will call 'delegate_tasks'; every worker is pinned to ${best.id}.`));
+
+          // Ollama default is to serialise inference. Warn before the first
+          // delegate so the user isn't surprised by single-worker speedup.
+          if (!process.env["OLLAMA_NUM_PARALLEL"]) {
+            console.log(
+              chalk.yellow(
+                "  ⚠ Ollama is likely running with OLLAMA_NUM_PARALLEL=1 (default).",
+              ),
+            );
+            console.log(
+              chalk.dim(
+                "    For true parallel sub-agents restart Ollama with:\n" +
+                  `      ${chalk.cyan("OLLAMA_NUM_PARALLEL=4 ollama serve")}\n` +
+                  "    Yeti-Code will tell you the actual speedup after each delegate.\n",
+              ),
+            );
+          } else {
+            console.log(
+              chalk.dim(
+                `  ✓ OLLAMA_NUM_PARALLEL=${process.env["OLLAMA_NUM_PARALLEL"]} — workers will fan out.\n`,
+              ),
+            );
+          }
+          await logger.log(`Team mode activated (leader: ${best.id})`);
         }
       } else if (cmd === "off") {
         teamModeActive = false;
@@ -346,15 +365,15 @@ async function main(): Promise<void> {
         console.log(chalk.dim("\n  Team mode OFF — back to single-agent.\n"));
         await logger.log("Team mode deactivated");
       } else if (cmd === "status" || !cmd) {
-        console.log(chalk.bold(`\n  Team mode: ${teamModeActive ? chalk.green("ON") : chalk.dim("off")}  ${chalk.dim("(Qwen-only)")}`));
+        console.log(chalk.bold(`\n  Team mode: ${teamModeActive ? chalk.green("ON") : chalk.dim("off")}`));
         console.log(chalk.dim(`  Active model: ${modelRegistry.getActiveId()}  (tool calling: ${modelRegistry.getActive().supportsTools ? "✓" : "✗"})`));
-        console.log(chalk.bold("\n  Qwen pool:"));
-        if (qwens.length === 0) {
-          console.log(chalk.dim("    (none — pull one: ollama pull qwen3:4b)"));
+        console.log(chalk.bold("\n  Worker pool:"));
+        if (workers.length === 0) {
+          console.log(chalk.dim("    (none — pull one: ollama pull gemma4:e4b)"));
         } else {
-          for (const m of qwens) {
-            const tag = bestQwen && m.id === bestQwen.id ? chalk.green(" ← primary") : "";
-            console.log(`    ${chalk.cyan(m.id.padEnd(24))} [${m.providerType}]${m.supportsTools ? "" : chalk.dim(" · no tools")}${tag}`);
+          for (const m of workers) {
+            const tag = best && m.id === best.id ? chalk.green(" ← primary") : "";
+            console.log(`    ${chalk.cyan(m.id.padEnd(24))} [${m.providerType}]${tag}`);
           }
         }
         console.log("");
@@ -520,62 +539,86 @@ async function main(): Promise<void> {
 
       if (planExecuteMode && plannerModelId && executorModelId) {
         // ── Plan & Execute Pipeline ─────────────────────────────────────────
-        const pModel = modelRegistry.list().find(m => m.id === plannerModelId);
-        const eModel = modelRegistry.list().find(m => m.id === executorModelId);
-        
+        const pModel = modelRegistry.list().find((m) => m.id === plannerModelId);
+        const eModel = modelRegistry.list().find((m) => m.id === executorModelId);
+
         if (!pModel || !eModel) throw new Error("Planner or Executor model missing.");
-        
+
         const pProvider = modelRegistry.getProviderFor(pModel.providerType);
         if (!pProvider) throw new Error(`No provider for ${pModel.providerType}`);
         const eProvider = modelRegistry.getProviderFor(eModel.providerType);
         if (!eProvider) throw new Error(`No provider for ${eModel.providerType}`);
 
-        console.log(chalk.dim(`\n  🧠 Planner (${pModel.id}) is creating an execution plan...\n`));
+        // Build a planner system prompt that names the actual tools the
+        // executor will have. Vague plans → vague execution.
+        const toolList = toolRegistry
+          .getAll()
+          .filter((t) => t.name !== "delegate_tasks")
+          .map((t) => `  · ${t.name}`)
+          .join("\n");
+        const plannerSystem =
+          "You are the Planner. Break the user's request into a short, numbered, " +
+          "imperative execution plan. Be specific about which tool to use per step. " +
+          "Do NOT execute anything yourself — output the plan only.\n\n" +
+          `Tools the Executor will have:\n${toolList}\n\n` +
+          "Format: a numbered list, one action per line. End with a one-line goal restatement.";
 
-        // Create a temporary context for the Planner to include the specific system prompt
-        const plannerCtx = new ConversationContext(config.maxContextTokens);
-        plannerCtx.updateSystemMessage(
-          "You are the Planner agent. Your job is to break down the user's request into a step-by-step execution plan. Do NOT execute any tools. Simply write out the logical steps needed to fulfill the request based on the tools available. Be clear and concise."
-        );
-        // Copy history
-        for (const msg of ctx.getMessages()) {
-          plannerCtx.addMessage(msg);
-        }
+        console.log(chalk.bold.magenta(`\nplanner (${pModel.id}) →`));
+        console.log(chalk.dim("  ─ planning ─"));
 
+        // Planner sees current conversation history + the user's latest turn,
+        // but with its own system prompt. No tools.
         let planOutput = "";
-        process.stdout.write(chalk.bold.magenta(`\nplanner (${pModel.id}) → `));
-
+        process.stdout.write("  ");
         await pProvider.streamChat({
           model: pModel.modelName,
-          systemInstruction: plannerCtx.getSystemInstruction(),
-          contents: plannerCtx.getMessages(),
+          systemInstruction: plannerSystem,
+          contents: ctx.getMessages(),
           writeToken: (t) => {
             planOutput += t;
-            process.stdout.write(chalk.magenta(t));
-          }
+            process.stdout.write(chalk.magenta(t.replace(/\n/g, "\n  ")));
+          },
         });
-        
         console.log("\n");
-        console.log(chalk.dim(`  ⚙️  Executor (${eModel.id}) is running the plan...\n`));
+        await logger.log(`[Plan] ${planOutput.trim()}`);
 
-        const augmentedInput = `User Request:\n${input}\n\nExecution Plan:\n${planOutput}\n\nPlease execute the tools required to fulfill this plan and provide the final response.`;
-        ctx.replaceLastMessage({ role: "user", parts: [{ text: augmentedInput }] });
+        console.log(chalk.dim(`  ─ executor (${eModel.id}) running ─\n`));
+
+        // Inject the plan into the system instruction for THIS turn only.
+        // Restore on the way out via `restoreSystemInstruction`. The user
+        // message in ctx stays clean, so follow-up turns aren't polluted.
+        restoreSystemInstruction = ctx.getSystemInstruction();
+        ctx.updateSystemMessage(
+          `${restoreSystemInstruction}\n\n---\nExecution plan for the current user message (produced by the Planner):\n${planOutput.trim()}\n\nFollow the plan using tools where appropriate.`,
+        );
 
         currentModel = eModel;
         currentProvider = eProvider;
         supportsTools = eModel.supportsTools;
       }
 
-      // In team mode, augment the system prompt with the available model list
-      // so the Leader can reason about which model to assign each task to.
+      // In team mode, pin every worker to the single chosen model and tell
+      // the leader exactly what to put in each task.modelId. Listing every
+      // registered model here makes the leader pick weird ones (e.g. a
+      // Gemini cloud model when we want gemma4 locally) and produces a
+      // misleading "🔧 delegate_tasks → [gemini-2.5-flash]" tool-call line
+      // even though our override later forces them to gemma4 anyway.
       if (teamModeActive && supportsTools) {
-        const modelList = modelRegistry.list()
-          .map((m) => `- ${m.id} [${m.providerType}]${m.supportsTools ? "" : " (no tool calling)"}`)
-          .join("\n");
-        const teamInstruction = `\n\n---\nCRITICAL INSTRUCTION: You are operating in TEAM MODE as the Leader agent.\nYou MUST use the 'delegate_tasks' tool to break down the user's request into parallel tasks and assign them to sub-agents. DO NOT answer the prompt directly.\nAvailable models for sub-agents:\n${modelList}\nDelegate every distinct part of the request. Once they return, you will synthesise the final answer.`;
+        const workerModelId = modelRegistry.pickBestWorker()?.id ?? currentModel.id;
+        const teamInstruction = [
+          "",
+          "",
+          "---",
+          "CRITICAL — TEAM MODE: You are the Leader.",
+          "Call the 'delegate_tasks' tool EXACTLY ONCE with multiple parallel sub-tasks. Do NOT answer the user directly.",
+          "",
+          `EVERY task in your tasks array MUST set "modelId": "${workerModelId}". This is the only worker model available.`,
+          "",
+          "After the tool returns the sub-agent results, you will receive them as a function response. On your next turn, write the synthesised final answer in plain markdown — do NOT call delegate_tasks again.",
+        ].join("\n");
         restoreSystemInstruction = ctx.getSystemInstruction();
         ctx.updateSystemMessage(restoreSystemInstruction + teamInstruction);
-        console.log(chalk.dim(`  🤝 Team mode — Leader: ${chalk.white(currentModel.id)}\n`));
+        console.log(chalk.dim(`  🤝 Team mode — Leader: ${chalk.white(currentModel.id)} · Workers: ${chalk.white(workerModelId)}\n`));
       }
 
       const effectiveConfig = { ...config, model: currentModel.modelName };
@@ -633,9 +676,21 @@ async function main(): Promise<void> {
           },
           onToolResult: (name, result) => {
             printToolResult(name, result, config.verbose);
-            // After delegate_tasks, reset team system prompt augmentation
+            // After delegate_tasks, switch the leader into SYNTHESIS mode.
+            // Previously we reset to the bare skill prompt, which wiped the
+            // "synthesise now" directive and left the leader producing
+            // filler like "I have delegated, please wait for the results".
             if (name === "delegate_tasks" && teamModeActive) {
-              ctx.updateSystemMessage(skillRegistry.getActive().systemPrompt);
+              const base = restoreSystemInstruction ?? skillRegistry.getActive().systemPrompt;
+              const synthesisInstruction = [
+                "",
+                "",
+                "---",
+                "SYNTHESIS PHASE: You have already called delegate_tasks. The sub-agent results are in the most recent function response — they are facts, not a plan.",
+                "Your job NOW is to write the final answer for the user as plain markdown using those results.",
+                "Do NOT call delegate_tasks again. Do NOT say you will summarise later. Write the synthesis in this turn.",
+              ].join("\n");
+              ctx.updateSystemMessage(base + synthesisInstruction);
             }
             // Restart spinner while waiting for next LLM turn
             firstTokenReceived = false;

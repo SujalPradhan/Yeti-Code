@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>yeti-code — teach AI like industry uses it.</title>
+  <meta name="description" content="An agentic AI students learn with. A trace of every step you can grade on. Built for the IITM Tools-in-Data-Science course." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%8A%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="#top">🧊 <span>yeti-code</span></a>
+      <a class="topnav-cta" href="#install">Install</a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ─── Hero ────────────────────────────────────────────────────── -->
+    <section id="top" class="hero">
+      <p class="kicker">IITM · Tools in Data Science · Jan 2026</p>
+      <h1>Teach AI the way<br />industry actually uses it.</h1>
+      <p class="lede">
+        yeti-code is an agentic AI students <em>learn with</em> —
+        and that gives you a complete record of every prompt, tool call,
+        and decision they made.
+      </p>
+
+      <div class="terminal" aria-hidden="true">
+        <div class="terminal-chrome">
+          <span class="dot dot-r"></span>
+          <span class="dot dot-y"></span>
+          <span class="dot dot-g"></span>
+          <span class="terminal-title">yeti-code — live agent</span>
+        </div>
+        <pre id="terminal-body" class="terminal-body"></pre>
+      </div>
+
+      <p class="hero-caption">
+        A real session, looped. One leader. Four workers in parallel.
+        Every step is logged.
+      </p>
+    </section>
+
+    <!-- ─── Problem ────────────────────────────────────────────────── -->
+    <section id="problem">
+      <p class="eyebrow">The problem</p>
+      <h2>Your students are already using AI.<br />You can't see how.</h2>
+      <p class="body-large">
+        The course allows it. Good — that matches reality. But you see only
+        the submitted notebook. You don't see the dead ends, the prompt
+        iterations, the moments where understanding clicked or didn't.
+        You're grading the answer, not the work.
+      </p>
+      <blockquote>
+        ChatGPT is a black box.<br />yeti-code is a glass box.
+      </blockquote>
+    </section>
+
+    <!-- ─── The shift ──────────────────────────────────────────────── -->
+    <section id="shift">
+      <p class="eyebrow">Why now</p>
+      <h2>One-shot prompts are a 2023 skill.</h2>
+      <p class="body-large">
+        Every dev tool that matters in 2026 — Claude Code, Cursor, Devin,
+        Aider — is a <em>tool-calling agent loop</em>. The model plans,
+        calls a tool, reads the result, self-corrects, and tries again.
+        Students who graduate knowing only ChatGPT are graduating with
+        yesterday's skill set.
+      </p>
+      <p class="body-large">
+        yeti-code teaches the new pattern by letting students <em>live in
+        it</em> for an entire semester.
+      </p>
+    </section>
+
+    <!-- ─── What changes ───────────────────────────────────────────── -->
+    <section id="outcomes">
+      <p class="eyebrow">What changes</p>
+      <h2>Two halves of the same idea.</h2>
+
+      <div class="two-up">
+        <article class="half">
+          <p class="half-label">For students</p>
+          <h3>An agent they can read.</h3>
+          <p>
+            Every tool call is named, every argument visible, every result
+            in plain text. Multi-agent team mode shows four workers run in
+            parallel. Plan-and-execute shows a planner think out loud
+            before an executor acts.
+          </p>
+          <p>
+            They graduate fluent in the patterns industry runs on:
+            tool selection, delegation, parallel work, prompt switching.
+            Not as theory — as muscle memory.
+          </p>
+        </article>
+
+        <article class="half">
+          <p class="half-label">For you</p>
+          <h3>Every step, on disk.</h3>
+          <p>
+            A timestamped log of every session lands in
+            <code>~/.yeti-code/logs/</code>. Prompts, tool calls, model
+            switches, errors, parallel-execution speedups. Local only —
+            students decide what to share.
+          </p>
+          <p>
+            Grade the <em>process</em>, not just the output. Spot the
+            student who shipped without understanding, and the one who
+            quietly mastered something deep.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ─── Vision ─────────────────────────────────────────────────── -->
+    <section id="vision">
+      <p class="eyebrow">What's next</p>
+      <h2>Today they run agents.<br />Next term they build them.</h2>
+      <p class="body-large">
+        The next step is letting students <em>author</em> their own
+        multi-step workflows — declarative files, runnable with one
+        command, gradeable as artefacts. Six lessons that take them from
+        understanding the agent loop to shipping a workflow as their
+        capstone.
+      </p>
+      <p class="body-large">
+        The loop closes: <strong>build, run, trace, reflect, iterate</strong>.
+        That's how a teaching tool becomes a teaching <em>method</em>.
+      </p>
+    </section>
+
+    <!-- ─── Install ────────────────────────────────────────────────── -->
+    <section id="install">
+      <p class="eyebrow">Try it</p>
+      <h2>One command.</h2>
+
+      <div class="install-block">
+        <pre id="install-cmd" aria-label="Install command"><code>curl -fsSL https://raw.githubusercontent.com/SujalPradhan/Yeti-Code/main/scripts/install.sh | sh</code></pre>
+        <button class="copy-btn" data-copy-target="install-cmd" aria-label="Copy install command">Copy</button>
+      </div>
+
+      <p class="install-hint">
+        Requires <code>node ≥ 20</code> and <a href="https://ollama.com/">Ollama</a>
+        running locally. Then <code>ollama pull gemma4:e4b</code> and you're up.
+      </p>
+
+      <p class="links">
+        <a href="https://github.com/SujalPradhan/Yeti-Code">github.com/SujalPradhan/Yeti-Code</a>
+        <span class="sep">·</span>
+        <a href="https://github.com/SujalPradhan/Yeti-Code/blob/main/architecture.md">architecture</a>
+        <span class="sep">·</span>
+        <a href="https://tds.s-anand.net">tds.s-anand.net</a>
+      </p>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>
+      Built for the IITM <em>Tools in Data Science</em> course.
+      <span class="sep">·</span>
+      Jan 2026.
+      <span class="sep">·</span>
+      <a href="https://github.com/SujalPradhan/Yeti-Code/blob/main/LICENSE">ISC</a>
+    </p>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

@@ -173,6 +173,7 @@ export const delegateTasksTool: Tool = {
     };
 
     // Run all sub-agents in parallel
+    const wallT0 = Date.now();
     const results = await orchestrator.runParallel(rawTasks, {
       onTaskStart: (task) => {
         const s = taskState.get(task.id);
@@ -194,6 +195,7 @@ export const delegateTasksTool: Tool = {
         rerender(true);
       },
     });
+    const wallMs = Date.now() - wallT0;
 
     // Log results
     for (const r of results) {
@@ -203,7 +205,42 @@ export const delegateTasksTool: Tool = {
       );
     }
 
-    console.log("");
+    // ── Parallelism summary ─────────────────────────────────────────────────
+    // wall = actual wall-clock for the whole fan-out.
+    // sum  = total CPU time across every sub-agent.
+    // speedup ≈ how parallel we actually were. 1.0× ⇒ serial. ~Ntasks ⇒ fully parallel.
+    const sumMs = results.reduce((s, r) => s + r.durationMs, 0);
+    const speedup = wallMs > 0 ? sumMs / wallMs : 0;
+    const speedupStr = `${speedup.toFixed(2)}×`;
+    const wallS = (wallMs / 1000).toFixed(1);
+    const sumS = (sumMs / 1000).toFixed(1);
+
+    if (rawTasks.length >= 2 && speedup < 1.4) {
+      // Serial — most likely Ollama's OLLAMA_NUM_PARALLEL is 1 (default).
+      console.log(
+        chalk.yellow(
+          `  ⚠ workers ran serially  ` +
+            chalk.dim(`(wall ${wallS}s · sum ${sumS}s · speedup ${speedupStr})`),
+        ),
+      );
+      console.log(
+        chalk.dim(
+          `    Ollama is serializing inference. To fan out for real, restart it with:\n` +
+            `      ${chalk.cyan("OLLAMA_NUM_PARALLEL=" + rawTasks.length + " ollama serve")}\n`,
+        ),
+      );
+    } else if (rawTasks.length >= 2) {
+      console.log(
+        chalk.dim(
+          `  ⚡ ${rawTasks.length} workers in ${wallS}s  (cumulative ${sumS}s · ${speedupStr} speedup)\n`,
+        ),
+      );
+    } else {
+      console.log("");
+    }
+    await context.logger.log(
+      `[Team] wall=${wallMs}ms sum=${sumMs}ms speedup=${speedupStr} tasks=${rawTasks.length}`,
+    );
 
     return orchestrator.formatResultsForLeader(plan, results);
   },

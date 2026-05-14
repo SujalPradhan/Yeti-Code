@@ -49,10 +49,13 @@ export function loadConfig(argv: string[] = process.argv): AppConfig {
   }>();
 
   const apiKey = process.env["GEMINI_API_KEY"] ?? process.env["OPENAI_API_KEY"] ?? "";
-  const model = opts.model ?? stateManager.getLastModel() ?? process.env["MODEL"] ?? "qwen3:4b";
+  const model = opts.model ?? stateManager.getLastModel() ?? process.env["MODEL"] ?? "gemma4:e4b";
+  // Default to 1M tokens — local models bear no per-token cost, and we'd
+  // rather let the model truncate at its own context limit than have
+  // yeti-code's trimmer silently drop history before the model even sees it.
   const maxContextTokens = opts.maxTokens
     ? parseInt(opts.maxTokens, 10)
-    : parseInt(process.env["MAX_CONTEXT_TOKENS"] ?? "8000", 10);
+    : parseInt(process.env["MAX_CONTEXT_TOKENS"] ?? "1000000", 10);
   const maxTurns = opts.maxTurns
     ? parseInt(opts.maxTurns, 10)
     : 10;

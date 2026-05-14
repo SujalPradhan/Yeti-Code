@@ -53,68 +53,86 @@ function registryWithModels(models: Array<{ id: string; modelName?: string; supp
   return { registry, provider };
 }
 
-// ── ModelRegistry Qwen helpers ─────────────────────────────────────────────
-describe("ModelRegistry — Qwen selection", () => {
-  it("listQwen filters to Ollama-hosted Qwen variants", () => {
+// ── ModelRegistry worker selection ─────────────────────────────────────────
+describe("ModelRegistry — worker selection", () => {
+  it("listToolWorkers filters to tool-capable, known-family Ollama models", () => {
     const { registry } = registryWithModels([
+      { id: "gemma4:e4b" },
       { id: "qwen3:4b" },
       { id: "qwen2.5:7b" },
-      { id: "gemma3:4b" },
+      { id: "gemma3:4b" },           // not on the family list
       { id: "mistral:7b" },
+      { id: "random-model:1b" },     // not on the family list
     ]);
-    const ids = registry.listQwen().map((m) => m.id).sort();
-    expect(ids).toEqual(["qwen2.5:7b", "qwen3:4b"]);
+    const ids = registry.listToolWorkers().map((m) => m.id).sort();
+    expect(ids).toEqual(["gemma4:e4b", "mistral:7b", "qwen2.5:7b", "qwen3:4b"]);
   });
 
-  it("pickBestQwen prefers tool-capable variants", () => {
+  it("pickBestWorker prefers gemma4 over qwen3 (family rank)", () => {
     const { registry } = registryWithModels([
-      { id: "qwen3:4b", supportsTools: true },
-      { id: "qwen3:32b", supportsTools: false },
+      { id: "qwen3:14b" },
+      { id: "gemma4:e4b" },
     ]);
-    expect(registry.pickBestQwen()?.id).toBe("qwen3:4b");
+    expect(registry.pickBestWorker()?.id).toBe("gemma4:e4b");
   });
 
-  it("pickBestQwen prefers larger when tool support is equal", () => {
+  it("pickBestWorker prefers qwen3 over qwen2.5", () => {
+    const { registry } = registryWithModels([
+      { id: "qwen2.5:14b" },
+      { id: "qwen3:4b" },
+    ]);
+    expect(registry.pickBestWorker()?.id).toBe("qwen3:4b");
+  });
+
+  it("pickBestWorker picks the largest within a family", () => {
     const { registry } = registryWithModels([
       { id: "qwen3:4b" },
       { id: "qwen3:14b" },
       { id: "qwen3:8b" },
     ]);
-    expect(registry.pickBestQwen()?.id).toBe("qwen3:14b");
+    expect(registry.pickBestWorker()?.id).toBe("qwen3:14b");
   });
 
-  it("pickBestQwen returns undefined when no Qwen is registered", () => {
+  it("pickBestWorker excludes models that don't support tools", () => {
     const { registry } = registryWithModels([
-      { id: "gemma3:4b" },
-      { id: "mistral:7b" },
+      { id: "gemma4:e4b", supportsTools: false },
+      { id: "qwen3:4b", supportsTools: true },
     ]);
-    expect(registry.pickBestQwen()).toBeUndefined();
+    expect(registry.pickBestWorker()?.id).toBe("qwen3:4b");
+  });
+
+  it("pickBestWorker returns undefined when nothing eligible is registered", () => {
+    const { registry } = registryWithModels([
+      { id: "gemma3:4b" },        // not on the family list
+      { id: "weird-llm:7b" },
+    ]);
+    expect(registry.pickBestWorker()).toBeUndefined();
   });
 
   it("only returns available models", () => {
-    const { registry } = registryWithModels([{ id: "qwen3:4b" }]);
-    registry.setAvailability("qwen3:4b", false);
-    expect(registry.listQwen()).toEqual([]);
-    expect(registry.pickBestQwen()).toBeUndefined();
+    const { registry } = registryWithModels([{ id: "gemma4:e4b" }]);
+    registry.setAvailability("gemma4:e4b", false);
+    expect(registry.listToolWorkers()).toEqual([]);
+    expect(registry.pickBestWorker()).toBeUndefined();
   });
 });
 
 // ── TeamOrchestrator ───────────────────────────────────────────────────────
 describe("TeamOrchestrator", () => {
-  it("pickWorkerModelId returns the best Qwen", () => {
+  it("pickWorkerModelId returns the best worker (gemma4 wins over qwen)", () => {
     const { registry } = registryWithModels([
       { id: "qwen3:14b" },
       { id: "qwen3:4b" },
-      { id: "gemma3:4b" },
+      { id: "gemma4:e4b" },
     ]);
     const orch = new TeamOrchestrator(registry);
-    expect(orch.pickWorkerModelId()).toBe("qwen3:14b");
+    expect(orch.pickWorkerModelId()).toBe("gemma4:e4b");
   });
 
-  it("pickWorkerModelId throws with a useful hint when no Qwen is present", () => {
-    const { registry } = registryWithModels([{ id: "gemma3:4b" }]);
+  it("pickWorkerModelId throws with a useful hint when no worker is present", () => {
+    const { registry } = registryWithModels([{ id: "weird-llm:7b" }]);
     const orch = new TeamOrchestrator(registry);
-    expect(() => orch.pickWorkerModelId()).toThrowError(/ollama pull qwen3/);
+    expect(() => orch.pickWorkerModelId()).toThrowError(/ollama pull gemma4/);
   });
 
   it("runParallel calls every sub-agent and returns aggregated results", async () => {
@@ -173,33 +191,32 @@ describe("delegate_tasks tool", () => {
     expect(out).toMatch(/requires team mode/);
   });
 
-  it("forces every task.modelId to the best Qwen, ignoring what the leader picked", async () => {
+  it("forces every task.modelId to the best worker, ignoring what the leader picked", async () => {
     const { registry, provider } = registryWithModels([
       { id: "qwen3:14b" },
       { id: "qwen3:4b" },
-      { id: "gemma3:4b" },
+      { id: "gemma4:e4b" }, // should win (gemma4 outranks qwen3)
     ]);
     const ctx = ctxWithOrchestrator(registry);
     const result = await delegateTasksTool.execute(
       {
         reasoning: "split work",
         tasks: [
-          { id: "t1", description: "d1", prompt: "p1", modelId: "gemma3:4b" }, // leader's pick
-          { id: "t2", description: "d2", prompt: "p2", modelId: "mistral:7b" }, // not even in registry
+          { id: "t1", description: "d1", prompt: "p1", modelId: "gemma3:4b" },   // leader's pick
+          { id: "t2", description: "d2", prompt: "p2", modelId: "mistral:7b" },  // not in registry
         ],
       },
       ctx,
     );
     expect(result).toMatch(/Task: d1/);
-    // every provider call must be the chosen Qwen, regardless of leader hint
     expect(provider.calls.length).toBe(2);
     for (const call of provider.calls) {
-      expect(call.model).toBe("qwen3:14b");
+      expect(call.model).toBe("gemma4:e4b");
     }
   });
 
-  it("returns a clear error when no Qwen is available", async () => {
-    const { registry } = registryWithModels([{ id: "gemma3:4b" }]);
+  it("returns a clear error when no worker is available", async () => {
+    const { registry } = registryWithModels([{ id: "weird-llm:7b" }]);
     const ctx = ctxWithOrchestrator(registry);
     const out = await delegateTasksTool.execute(
       {
@@ -208,7 +225,7 @@ describe("delegate_tasks tool", () => {
       },
       ctx,
     );
-    expect(out).toMatch(/ollama pull qwen3/);
+    expect(out).toMatch(/ollama pull gemma4/);
   });
 
   it("rejects malformed tasks", async () => {
@@ -234,5 +251,49 @@ describe("delegate_tasks tool", () => {
       ctx,
     );
     expect(provider.calls.length).toBe(1);
+  });
+
+  it("actually runs workers in parallel (Promise.all-level, not serialized by JS)", async () => {
+    // Stub provider that sleeps so we can measure wall-clock vs sum.
+    class SleepProvider {
+      public calls: number = 0;
+      async streamChat(_opts: unknown): Promise<unknown> {
+        this.calls++;
+        await new Promise((r) => setTimeout(r, 200));
+        return { text: "ok", functionCalls: [], promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+      }
+    }
+    const registry = new ModelRegistry();
+    const sleeper = new SleepProvider();
+    registry.registerProvider("ollama", sleeper as unknown as Parameters<ModelRegistry["registerProvider"]>[1]);
+    registry.addModel({
+      id: "gemma4:e4b",
+      label: "gemma4",
+      providerType: "ollama",
+      modelName: "gemma4:e4b",
+      available: true,
+      supportsTools: true,
+    });
+    const orch = new TeamOrchestrator(registry);
+
+    const t0 = Date.now();
+    const results = await orch.runParallel(
+      Array.from({ length: 4 }, (_, i) => ({
+        id: `t${i}`,
+        description: `d${i}`,
+        prompt: "p",
+        modelId: "gemma4:e4b",
+      })),
+    );
+    const wall = Date.now() - t0;
+    const sum = results.reduce((s, r) => s + r.durationMs, 0);
+
+    // If the orchestrator were accidentally serializing, wall ≈ sum ≈ 800ms.
+    // If parallel at the JS event-loop level (which is what we control),
+    // wall ≈ max(durationMs) ≈ 200ms. We allow some slack for CI jitter.
+    expect(wall).toBeLessThan(500);
+    expect(sum).toBeGreaterThanOrEqual(800);
+    expect(results).toHaveLength(4);
+    expect(sleeper.calls).toBe(4);
   });
 });

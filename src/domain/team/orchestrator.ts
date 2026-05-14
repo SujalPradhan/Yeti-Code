@@ -26,19 +26,21 @@ export class TeamOrchestrator {
   constructor(private readonly modelRegistry: ModelRegistry) {}
 
   /**
-   * Team mode is Qwen-only — return the modelId every sub-agent should use.
-   * The leader rewrites each task.modelId to this before running. Throws if
-   * no Qwen is registered (which /team on already guards against).
+   * Return the modelId every sub-agent should use. The leader rewrites each
+   * task.modelId to this before running so the leader can delegate without
+   * needing to know which local models exist. Throws if no compatible
+   * worker is registered (which /team on already guards against).
    */
   pickWorkerModelId(): string {
-    const qwen = this.modelRegistry.pickBestQwen();
-    if (!qwen) {
+    const worker = this.modelRegistry.pickBestWorker();
+    if (!worker) {
       throw new Error(
-        "Team mode requires at least one Qwen model from Ollama. " +
-          "Pull one with: ollama pull qwen3:4b",
+        "Team mode needs at least one tool-capable Ollama model " +
+          "(gemma4, qwen3, qwen2.5, llama3, mistral, or command-r). " +
+          "Install one with: ollama pull gemma4:e4b",
       );
     }
-    return qwen.id;
+    return worker.id;
   }
 
   private resolveProvider(modelId: string) {
